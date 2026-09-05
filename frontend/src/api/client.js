@@ -1,7 +1,15 @@
-let accessToken = null;
+const TOKEN_KEY = 'hfc_access_token';
+
+let accessToken = (() => {
+  try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
+})();
 
 export function setAccessToken(token) {
   accessToken = token;
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch {}
 }
 
 async function request(method, path, body) {
@@ -15,7 +23,7 @@ async function request(method, path, body) {
     body: body ? JSON.stringify(body) : undefined,
   });
 
-  if (res.status === 401 && path !== '/auth/login') {
+  if (res.status === 401 && path !== '/auth/login' && path !== '/auth/me') {
     const refreshed = await refreshToken();
     if (refreshed) return request(method, path, body);
     window.location.href = '/login';
