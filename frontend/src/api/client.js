@@ -15,7 +15,7 @@ async function request(method, path, body) {
     body: body ? JSON.stringify(body) : undefined,
   });
 
-  if (res.status === 401 && path !== '/auth/login') {
+  if (res.status === 401 && path !== '/auth/login' && path !== '/auth/me') {
     const refreshed = await refreshToken();
     if (refreshed) return request(method, path, body);
     window.location.href = '/login';
