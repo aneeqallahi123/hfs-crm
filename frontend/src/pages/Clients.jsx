@@ -127,7 +127,7 @@ export default function Clients() {
         <div className="border border-dashed border-tint rounded-lg p-10 text-center">
           <p className="text-sm text-ink">No clients yet.</p>
           <p className="text-xs text-slate-500 mt-1 mb-3">Add the first one, then start a year from the left panel.</p>
-          {canEdit && <Btn onClick={() => setAdding(true)}>Add first client</Btn>}
+          {canEdit && !adding && <Btn onClick={() => setAdding(true)}>Add first client</Btn>}
         </div>
       ) : (
         <div className="bg-paper border border-tint rounded-lg overflow-hidden">
