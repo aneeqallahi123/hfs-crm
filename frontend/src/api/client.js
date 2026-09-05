@@ -113,4 +113,27 @@ export const api = {
     get: (module = 'audit') => request('GET', `/library?module=${module}`).then(r => r?.library ?? r),
     save: (module, library) => request('PUT', `/library/${module}`, { library }),
   },
+  clientLibrary: {
+    get: (clientId, module = 'audit') => request('GET', `/clients/${clientId}/library?module=${module}`),
+    excludeHead: (clientId, headId) => request('POST', `/clients/${clientId}/library/exclude-head`, { headId }),
+    unexcludeHead: (clientId, headId) => request('DELETE', `/clients/${clientId}/library/exclude-head/${headId}`),
+    excludeItem: (clientId, itemId) => request('POST', `/clients/${clientId}/library/exclude-item`, { itemId }),
+    unexcludeItem: (clientId, itemId) => request('DELETE', `/clients/${clientId}/library/exclude-item/${itemId}`),
+    addCustomHead: (clientId, section, sub) => request('POST', `/clients/${clientId}/library/custom-heads`, { section, sub }),
+    removeCustomHead: (clientId, headId) => request('DELETE', `/clients/${clientId}/library/custom-heads/${headId}`),
+    addCustomItemToHead: (clientId, masterHeadId, data) => request('POST', `/clients/${clientId}/library/master-heads/${masterHeadId}/items`, data),
+    addCustomItemToCustomHead: (clientId, customHeadId, data) => request('POST', `/clients/${clientId}/library/custom-heads/${customHeadId}/items`, data),
+    removeCustomItem: (clientId, itemId) => request('DELETE', `/clients/${clientId}/library/custom-items/${itemId}`),
+  },
+  clientValues: {
+    list: (clientId) => request('GET', `/clients/${clientId}/values`).then(r => r?.values ?? r),
+    upsert: (clientId, data) => request('PUT', `/clients/${clientId}/values`, data),
+    delete: (clientId, valueId) => request('DELETE', `/clients/${clientId}/values/${valueId}`),
+    upload: (clientId, formData) => fetch(`${import.meta.env.VITE_API_URL}/clients/${clientId}/values/upload`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      credentials: 'include',
+      body: formData,
+    }).then(r => r.json()),
+  },
 };
