@@ -78,7 +78,7 @@ export const api = {
     delete: (id) => request('DELETE', `/items/${id}`),
   },
   inbox: {
-    list: (engagementId) => request('GET', `/inbox?engagementId=${engagementId}`),
+    list: (engagementId) => request('GET', engagementId ? `/inbox?engagementId=${engagementId}` : '/inbox'),
     assign: (fileId, itemId) => request('PATCH', `/inbox/${fileId}/assign`, { itemId }),
     unassign: (fileId) => request('PATCH', `/inbox/${fileId}/assign`, { itemId: null }),
   },
