@@ -82,7 +82,7 @@ export default function Clients() {
 
   return (
     <div className="stagger p-8 max-w-4xl">
-      <header className="mb-6 flex items-end justify-between">
+      <header className="mb-6 flex items-start justify-between">
         <div>
           <h1 className="font-serif text-[32px] leading-[1.15] font-medium text-ink tracking-[-0.01em]">Clients</h1>
           <div className="mt-3 h-px w-12 bg-green" />
