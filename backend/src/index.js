@@ -16,6 +16,7 @@ import webhookRoutes from './routes/webhooks.js';
 import eventRoutes from './routes/events.js';
 import { verifyToken } from './middleware/auth.js';
 import { ensureBucket } from './storage/minio.js';
+import { runMigrations } from './db/migrate.js';
 
 const app = express();
 
@@ -48,12 +49,14 @@ app.get('/health', (_, res) => res.json({ ok: true }));
 
 const PORT = process.env.PORT || 3000;
 
-ensureBucket()
+runMigrations()
+  .then(() => ensureBucket().catch(err => {
+    console.warn('MinIO bucket check failed (non-fatal):', err.message);
+  }))
   .then(() => {
     app.listen(PORT, () => console.log(`HFC API running on port ${PORT}`));
   })
   .catch(err => {
-    // Non-fatal — MinIO may not be reachable at startup in some envs
-    console.warn('MinIO bucket check failed (non-fatal):', err.message);
-    app.listen(PORT, () => console.log(`HFC API running on port ${PORT}`));
+    console.error('Startup failed:', err);
+    process.exit(1);
   });
