@@ -29,9 +29,13 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
 
-const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
+const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100 });
 const apiLimiter  = rateLimit({ windowMs: 60 * 1000, max: 300 });
 
+// /auth/me and /auth/refresh are session-restore calls — use the lighter API limiter
+// Only login and logout need the strict auth limiter
+app.use('/api/auth/me', apiLimiter, authRoutes);
+app.use('/api/auth/refresh', apiLimiter, authRoutes);
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/webhooks', webhookRoutes);      // webhook auth is its own shared-secret check, not JWT
 
