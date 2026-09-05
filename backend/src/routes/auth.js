@@ -19,7 +19,7 @@ function issueAccessToken(user) {
   return jwt.sign(
     { sub: user.id, name: user.name, role: user.role },
     process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_ACCESS_EXPIRY || '15m' }
+    { expiresIn: process.env.JWT_ACCESS_EXPIRY || '7d' }
   );
 }
 
