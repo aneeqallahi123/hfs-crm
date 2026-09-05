@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../db/pool.js';
 import { rbac } from '../middleware/rbac.js';
+import { logEvent } from '../db/events.js';
 
 const router = Router();
 
@@ -83,6 +84,14 @@ router.patch('/:id', async (req, res) => {
   };
 
   try {
+    const { rows: beforeRows } = await pool.query(
+      `SELECT i.*, e.module AS eng_module, e.client_id AS eng_client_id
+       FROM items i JOIN engagements e ON e.id = i.engagement_id WHERE i.id = $1`,
+      [req.params.id]
+    );
+    const before = beforeRows[0];
+    if (!before) return res.status(404).json({ error: 'Item not found' });
+
     const updates = [];
     const values = [];
     let i = 1;
@@ -102,8 +111,31 @@ router.patch('/:id', async (req, res) => {
       `UPDATE items SET ${updates.join(', ')} WHERE id = $${i} RETURNING *`,
       values
     );
-    if (!rows[0]) return res.status(404).json({ error: 'Item not found' });
-    res.json({ item: toItem(rows[0]) });
+    const after = rows[0];
+    if (!after) return res.status(404).json({ error: 'Item not found' });
+
+    const ctx = {
+      by: req.user.name, userId: req.user.sub, module: before.eng_module,
+      engagementId: before.engagement_id, clientId: before.eng_client_id,
+      entity: 'item', entityId: after.id, label: after.p,
+    };
+    if (req.body.status !== undefined && after.status !== before.status) {
+      await logEvent({ ...ctx, type: 'item.status', from: before.status, to: after.status });
+    }
+    if (req.body.owner !== undefined && after.owner !== before.owner) {
+      await logEvent({ ...ctx, type: 'item.owner', from: before.owner, to: after.owner });
+    }
+    if (req.body.due !== undefined && after.due !== before.due) {
+      await logEvent({ ...ctx, type: 'item.due', from: before.due, to: after.due });
+    }
+    if (req.body.dateReceived !== undefined && after.date_received !== before.date_received) {
+      await logEvent({ ...ctx, type: 'item.received_date', from: before.date_received, to: after.date_received });
+    }
+    if (req.body.requestable !== undefined && after.requestable !== before.requestable) {
+      await logEvent({ ...ctx, type: 'item.requestable', to: after.requestable ? 'client-provided' : 'team work' });
+    }
+
+    res.json({ item: toItem(after) });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error' });
@@ -155,17 +187,34 @@ router.patch('/bulk', async (req, res) => {
 });
 
 // POST /api/items/adhoc
+// Adds an extra, one-off item. Defaults to the Ad-hoc bucket; pass headId/section/sub
+// (plus requestable) to instead add an extra item under an existing library heading.
 router.post('/adhoc', async (req, res) => {
-  const { engagementId, p, due = '', owner = '', remarks = '' } = req.body;
+  const {
+    engagementId, p, due = '', owner = '', remarks = '',
+    headId = 'adhoc', section = 'Z', sub = 'Ad-hoc', requestable = false,
+  } = req.body;
   if (!engagementId || !p) return res.status(400).json({ error: 'engagementId and p required' });
 
   try {
-    const { rows } = await pool.query(
-      `INSERT INTO items (engagement_id, p, adhoc, owner, due, remarks, status)
-       VALUES ($1, $2, true, $3, $4, $5, 'No progress') RETURNING *`,
-      [engagementId, p, owner, due, remarks]
+    const { rows: engRows } = await pool.query(
+      'SELECT module, client_id FROM engagements WHERE id = $1', [engagementId]
     );
-    res.status(201).json({ item: toItem(rows[0]) });
+    if (!engRows[0]) return res.status(404).json({ error: 'Engagement not found' });
+
+    const isAdhocBucket = headId === 'adhoc';
+    const { rows } = await pool.query(
+      `INSERT INTO items (engagement_id, ref, section, head_id, sub, p, adhoc, requestable, head_included, owner, due, remarks, status)
+       VALUES ($1, '+', $6, $7, $8, $2, $10, $9, true, $3, $4, $5, 'No progress') RETURNING *`,
+      [engagementId, p, owner, due, remarks, section, headId, sub, requestable, isAdhocBucket]
+    );
+    const item = rows[0];
+    await logEvent({
+      by: req.user.name, userId: req.user.sub, module: engRows[0].module,
+      engagementId, clientId: engRows[0].client_id,
+      entity: 'item', entityId: item.id, label: item.p, type: 'item.added',
+    });
+    res.status(201).json({ item: toItem(item) });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error' });
@@ -175,11 +224,24 @@ router.post('/adhoc', async (req, res) => {
 // DELETE /api/items/:id
 router.delete('/:id', rbac('partner', 'manager'), async (req, res) => {
   try {
+    const { rows: beforeRows } = await pool.query(
+      `SELECT i.*, e.module AS eng_module, e.client_id AS eng_client_id
+       FROM items i JOIN engagements e ON e.id = i.engagement_id WHERE i.id = $1`,
+      [req.params.id]
+    );
+    const before = beforeRows[0];
     const { rows } = await pool.query(
       'DELETE FROM items WHERE id = $1 RETURNING id',
       [req.params.id]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Item not found' });
+    if (before) {
+      await logEvent({
+        by: req.user.name, userId: req.user.sub, module: before.eng_module,
+        engagementId: before.engagement_id, clientId: before.eng_client_id,
+        entity: 'item', entityId: before.id, label: before.p, type: 'item.removed', from: before.owner,
+      });
+    }
     res.json({ ok: true });
   } catch (err) {
     console.error(err);

@@ -80,3 +80,7 @@ input[type="date"]::-webkit-calendar-picker-indicator { opacity: .5; }
 @media (prefers-reduced-motion: reduce) { .toast, .view-fade { animation: none !important } }
 
 p { max-width: 68ch; }
+
+.ring-track { stroke: var(--tint); }
+.ring-fill { stroke: var(--green); transition: stroke-dashoffset .7s cubic-bezier(.2,.8,.2,1); }
+

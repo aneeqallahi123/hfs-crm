@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { pool } from '../db/pool.js';
 import { rbac } from '../middleware/rbac.js';
 import { defaultIncluded } from '../db/library_seed.js';
+import { logEvent } from '../db/events.js';
 
 const router = Router();
 
@@ -107,6 +108,11 @@ router.post('/', rbac('partner', 'manager'), async (req, res) => {
     }
 
     await client.query('COMMIT');
+    const { rows: [c] } = await pool.query('SELECT name FROM clients WHERE id = $1', [clientId]);
+    await logEvent({
+      by: req.user.name, userId: req.user.sub, module, engagementId: eng.id, clientId,
+      entity: 'engagement', entityId: eng.id, label: c?.name || '', type: 'engagement.created', to: `FY ${year}`,
+    });
     res.status(201).json({ engagement: toEngagement(eng) });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -122,6 +128,10 @@ router.post('/', rbac('partner', 'manager'), async (req, res) => {
 router.patch('/:id', rbac('partner', 'manager'), async (req, res) => {
   const { incharge, contactPhone, waGroupId, deadline, year } = req.body;
   try {
+    const { rows: beforeRows } = await pool.query('SELECT * FROM engagements WHERE id = $1', [req.params.id]);
+    const before = beforeRows[0];
+    if (!before) return res.status(404).json({ error: 'Engagement not found' });
+
     const updates = [];
     const values = [];
     let i = 1;
@@ -140,8 +150,22 @@ router.patch('/:id', rbac('partner', 'manager'), async (req, res) => {
       `UPDATE engagements SET ${updates.join(', ')} WHERE id = $${i} RETURNING *`,
       values
     );
-    if (!rows[0]) return res.status(404).json({ error: 'Engagement not found' });
-    res.json({ engagement: toEngagement(rows[0]) });
+    const after = rows[0];
+    if (!after) return res.status(404).json({ error: 'Engagement not found' });
+
+    const { rows: [c] } = await pool.query('SELECT name FROM clients WHERE id = $1', [after.client_id]);
+    const ctx = {
+      by: req.user.name, userId: req.user.sub, module: after.module,
+      engagementId: after.id, clientId: after.client_id, entity: 'engagement', entityId: after.id,
+      label: c?.name ? `${c.name} FY ${after.year}` : `FY ${after.year}`,
+    };
+    if (incharge !== undefined && after.incharge !== before.incharge) {
+      await logEvent({ ...ctx, type: 'engagement.incharge', from: before.incharge, to: after.incharge });
+    }
+    if (deadline !== undefined && after.deadline !== before.deadline) {
+      await logEvent({ ...ctx, type: 'engagement.deadline', from: before.deadline, to: after.deadline });
+    }
+    res.json({ engagement: toEngagement(after) });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error' });
@@ -151,11 +175,21 @@ router.patch('/:id', rbac('partner', 'manager'), async (req, res) => {
 // DELETE /api/engagements/:id — partner only
 router.delete('/:id', rbac('partner'), async (req, res) => {
   try {
+    const { rows: beforeRows } = await pool.query('SELECT * FROM engagements WHERE id = $1', [req.params.id]);
+    const before = beforeRows[0];
     const { rows } = await pool.query(
       'DELETE FROM engagements WHERE id = $1 RETURNING id',
       [req.params.id]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Engagement not found' });
+    if (before) {
+      const { rows: [c] } = await pool.query('SELECT name FROM clients WHERE id = $1', [before.client_id]);
+      await logEvent({
+        by: req.user.name, userId: req.user.sub, module: before.module, clientId: before.client_id,
+        entity: 'engagement', entityId: before.id,
+        label: c?.name ? `${c.name} FY ${before.year}` : `FY ${before.year}`, type: 'engagement.removed',
+      });
+    }
     res.json({ ok: true });
   } catch (err) {
     console.error(err);
@@ -213,6 +247,12 @@ router.post('/:id/roll-forward', rbac('partner', 'manager'), async (req, res) =>
     }
 
     await client.query('COMMIT');
+    const { rows: [c] } = await pool.query('SELECT name FROM clients WHERE id = $1', [src.client_id]);
+    await logEvent({
+      by: req.user.name, userId: req.user.sub, module: src.module, engagementId: newEng.id, clientId: src.client_id,
+      entity: 'engagement', entityId: newEng.id, label: c?.name || '',
+      type: 'engagement.created', from: `rolled from FY ${src.year}`, to: `FY ${newYear}`,
+    });
     res.status(201).json({ engagement: toEngagement(newEng), itemsCopied: srcItems.length });
   } catch (err) {
     await client.query('ROLLBACK');

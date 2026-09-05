@@ -1,432 +1,58 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
-import Btn from '../components/Btn.jsx';
 import Modal from '../components/Modal.jsx';
-import Field from '../components/Field.jsx';
+import Btn from '../components/Btn.jsx';
+import EditableText from '../components/EditableText.jsx';
+import OwnerSelect from '../components/OwnerSelect.jsx';
+import StatusSelect from '../components/StatusSelect.jsx';
+import {
+  today, isAdhoc, owedToUs, progressTier, noProgressDays, ageLabel, TIER_STYLE,
+  engMetrics, withStatus, composeMessage, afterSend, normalizePhone, fmtSize,
+  statusLabel, statusStyle, sectionLabel,
+} from '../lib/metrics.js';
 
-// DB statuses — must match CHECK constraint exactly
-const STATUSES = ['No progress', 'Requested', 'Under Review', 'Completed', 'NA'];
+const STAGES = [
+  ['request', 'To request', 'Not yet asked of the client'],
+  ['awaited', 'Awaited', 'Asked; waiting on the client'],
+  ['review', 'To review', 'Received; needs a check'],
+  ['internal', 'Not started', 'Team work not yet begun'],
+  ['complete', 'Complete', 'Signed off'],
+];
 
-// Display labels for status pills/dropdowns
-const STATUS_LABEL = {
-  'No progress': 'Not started',
-  'Requested': 'Awaited',
-  'Under Review': 'To review',
-  'Completed': 'Complete',
-  'NA': 'N/A',
-};
-
-function statusStyle(s) {
-  if (s === 'Completed') return 'bg-fog text-green border-green/40';
-  if (s === 'Requested') return 'bg-amber-50 text-amber-700 border-amber-200';
-  if (s === 'Under Review') return 'bg-blue-50 text-blue-700 border-blue-200';
-  if (s === 'NA') return 'bg-fog text-slate-400 border-tint';
-  return 'bg-paper text-slate-400 border-tint';
-}
-
-function kindDot(kind) {
-  if (kind === 'document') return 'bg-blue-400';
-  if (kind === 'confirmation') return 'bg-purple-400';
-  if (kind === 'procedure') return 'bg-tint';
-  return 'bg-slate-300';
-}
-
-// ---- Scope Panel Modal ----
-function ScopeModal({ items, onClose, onSaved }) {
-  const toast = useToast();
-  const [saving, setSaving] = useState(false);
-
-  // Build heads map: headId -> { sub, section, included, items[] }
-  const headsMap = {};
-  for (const it of items) {
-    if (!it.headId) continue;
-    if (!headsMap[it.headId]) {
-      headsMap[it.headId] = {
-        headId: it.headId,
-        sub: it.sub || it.headId,
-        section: it.section || '?',
-        included: it.headIncluded !== false,
-        items: [],
-      };
-    }
-    headsMap[it.headId].items.push(it);
-    // If any item is included, mark head included
-    if (it.headIncluded) headsMap[it.headId].included = true;
-  }
-
-  const SECTION_NAMES = {
-    A: 'A · Permanent File',
-    B: 'B · Planning File',
-    C: 'C · General Procedures',
-    D: 'D · Head-Wise Audit',
-  };
-
-  const [state, setState] = useState(headsMap);
-
-  function toggle(headId) {
-    setState(prev => ({
-      ...prev,
-      [headId]: { ...prev[headId], included: !prev[headId].included },
-    }));
-  }
-
-  async function apply() {
-    setSaving(true);
-    try {
-      const updates = [];
-      for (const [headId, head] of Object.entries(state)) {
-        for (const it of head.items) {
-          const current = items.find(i => i.id === it.id);
-          if (current && current.headIncluded !== head.included) {
-            updates.push({ id: it.id, headIncluded: head.included });
-          }
-        }
-      }
-      if (updates.length) {
-        await api.items.bulkUpdate(updates);
-      }
-      toast('Scope updated', 'success');
-      onSaved();
-      onClose();
-    } catch (err) {
-      toast(err.message, 'error');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  const sections = ['A', 'B', 'C', 'D'];
-  const bySection = sections.reduce((acc, s) => {
-    acc[s] = Object.values(state).filter(h => h.section === s);
-    return acc;
-  }, {});
-
-  return (
-    <Modal title="Engagement scope" onClose={onClose} wide>
-      <p className="text-xs text-slate-500 mb-4">Toggle which library sections apply to this engagement. Excluded heads are hidden from the checklist.</p>
-      <div className="space-y-5 max-h-[60vh] overflow-y-auto pr-1">
-        {sections.map(section => {
-          const heads = bySection[section];
-          if (!heads.length) return null;
-          return (
-            <div key={section}>
-              <h3 className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">
-                {SECTION_NAMES[section]}
-              </h3>
-              <div className="space-y-1">
-                {heads.map(head => (
-                  <label key={head.headId} className="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-fog cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={head.included}
-                      onChange={() => toggle(head.headId)}
-                      className="accent-green"
-                    />
-                    <span className="text-sm text-ink">{head.sub}</span>
-                    <span className="ml-auto text-xs text-slate-400">{head.items.length} items</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      <div className="flex justify-end gap-2 pt-4 border-t border-tint mt-4">
-        <Btn kind="ghost" onClick={onClose}>Cancel</Btn>
-        <Btn onClick={apply} disabled={saving}>{saving ? 'Applying…' : 'Apply'}</Btn>
-      </div>
-    </Modal>
-  );
+function stageOf(it) {
+  if (!it.headIncluded || it.status === 'NA') return null;
+  if (it.status === 'Completed') return 'complete';
+  if (it.status === 'Under Review') return 'review';
+  if (it.requestable && (it.status === 'Requested' || it.queried)) return 'awaited';
+  if (it.requestable) return 'request';
+  return 'internal';
 }
 
 // ---- Item row ----
-function ItemRow({ item, onUpdate, canEdit, teamMembers }) {
-  const [expanded, setExpanded] = useState(false);
-  const [draft, setDraft] = useState({
-    status: item.status,
-    remarks: item.remarks || '',
-    due: item.due || '',
-    owner: item.owner || '',
-  });
-  const [saving, setSaving] = useState(false);
+function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, selected, onToggleSel, onRemove }) {
+  const [open, setOpen] = useState(false);
   const toast = useToast();
-
-  async function save() {
-    setSaving(true);
-    try {
-      await onUpdate(item.id, draft);
-      setExpanded(false);
-    } catch (err) {
-      toast(err.message, 'error');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function changeStatus(status) {
-    const next = { ...draft, status };
-    setDraft(next);
-    try {
-      await onUpdate(item.id, { status });
-    } catch (err) {
-      toast(err.message, 'error');
-      setDraft(d => ({ ...d, status: item.status }));
-    }
-  }
-
-  return (
-    <div className={`border-b border-tint last:border-0 ${item.status === 'Completed' ? 'opacity-60' : ''}`}>
-      <div className="flex items-start gap-3 px-4 py-3 hover:bg-fog/50 transition-colors">
-        {/* Kind dot */}
-        <div className="shrink-0 mt-1.5">
-          <span className={`block w-2 h-2 rounded-full ${kindDot(item.kind)}`} title={item.kind || 'item'} />
-        </div>
-
-        {/* Ref */}
-        {item.ref && (
-          <span className="shrink-0 font-mono text-[11px] text-slate-400 pt-0.5 w-10">{item.ref}</span>
-        )}
-
-        {/* Description */}
-        <div className="flex-1 min-w-0">
-          <p className="text-sm text-ink leading-snug">{item.p}</p>
-          {item.remarks && !expanded && (
-            <p className="text-xs text-slate-500 mt-0.5 italic">"{item.remarks}"</p>
-          )}
-          {item.due && !expanded && (
-            <p className="text-xs text-slate-400 mt-0.5">Due: {item.due}</p>
-          )}
-
-          {expanded && (
-            <div className="mt-3 space-y-2">
-              {canEdit && (
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-xs text-slate-500 block mb-1">Owner</label>
-                    <select
-                      value={draft.owner}
-                      onChange={e => setDraft(d => ({ ...d, owner: e.target.value }))}
-                      className="w-full border border-tint rounded-md px-2 py-1.5 text-xs focus:outline-none focus:border-green"
-                    >
-                      <option value="">— unassigned —</option>
-                      {teamMembers.map(m => (
-                        <option key={m.id} value={m.name}>{m.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs text-slate-500 block mb-1">Due</label>
-                    <input
-                      type="date"
-                      value={draft.due}
-                      onChange={e => setDraft(d => ({ ...d, due: e.target.value }))}
-                      className="w-full border border-tint rounded-md px-2 py-1.5 text-xs focus:outline-none focus:border-green"
-                    />
-                  </div>
-                </div>
-              )}
-              <div>
-                <label className="text-xs text-slate-500 block mb-1">Remarks</label>
-                <textarea
-                  value={draft.remarks}
-                  onChange={e => setDraft(d => ({ ...d, remarks: e.target.value }))}
-                  placeholder="Add a remark…"
-                  rows={2}
-                  readOnly={!canEdit}
-                  className="w-full border border-tint rounded-md px-3 py-2 text-sm focus:outline-none focus:border-green resize-none"
-                />
-              </div>
-              {canEdit && (
-                <div className="flex gap-2 justify-end">
-                  <Btn size="sm" kind="ghost" onClick={() => setExpanded(false)}>Cancel</Btn>
-                  <Btn size="sm" onClick={save} disabled={saving}>{saving ? '…' : 'Save'}</Btn>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Owner badge */}
-        {item.owner && !expanded && (
-          <span className="shrink-0 text-[11px] text-slate-400 pt-0.5">{item.owner}</span>
-        )}
-
-        {/* Status */}
-        <div className="shrink-0 pt-0.5">
-          {canEdit ? (
-            <select
-              value={draft.status}
-              onChange={e => changeStatus(e.target.value)}
-              className={`text-[11px] rounded-full border pl-2.5 pr-6 py-0.5 focus:outline-none cursor-pointer appearance-none ${statusStyle(draft.status)}`}
-              style={{ backgroundImage: "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%231C1C1C' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center' }}
-            >
-              {STATUSES.map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
-            </select>
-          ) : (
-            <span className={`text-[11px] rounded-full border px-2.5 py-0.5 ${statusStyle(draft.status)}`}>
-              {STATUS_LABEL[draft.status] || draft.status}
-            </span>
-          )}
-        </div>
-
-        {/* Expand toggle */}
-        <button
-          onClick={() => setExpanded(v => !v)}
-          className="shrink-0 text-slate-400 hover:text-ink pt-0.5 text-xs"
-        >
-          {expanded ? '▲' : '▼'}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ---- Section group ----
-function SectionGroup({ label, items, onUpdate, canEdit, teamMembers }) {
-  const [collapsed, setCollapsed] = useState(false);
-  const done = items.filter(it => it.status === 'Completed').length;
-  const pct = items.length ? Math.round((done / items.length) * 100) : 0;
-
-  return (
-    <div className="mb-4">
-      <button
-        className="w-full flex items-center gap-3 px-4 py-2 bg-fog border border-tint rounded-t-lg text-left hover:bg-tint/30 transition-colors"
-        onClick={() => setCollapsed(v => !v)}
-      >
-        <span className="text-xs font-medium text-ink flex-1">{label}</span>
-        <span className="text-xs text-slate-500">{done}/{items.length}</span>
-        <div className="w-24 h-1.5 rounded-full bg-tint overflow-hidden">
-          <div className="h-full bg-green rounded-full transition-all" style={{ width: `${pct}%` }} />
-        </div>
-        <span className="text-[10px] text-slate-400 w-6 text-right">{collapsed ? '▸' : '▾'}</span>
-      </button>
-      {!collapsed && (
-        <div className="bg-paper border border-t-0 border-tint rounded-b-lg overflow-hidden">
-          {items.map(item => (
-            <ItemRow
-              key={item.id}
-              item={item}
-              onUpdate={onUpdate}
-              canEdit={canEdit}
-              teamMembers={teamMembers}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ---- Inbox tab ----
-function InboxTab({ engagementId, items }) {
-  const [files, setFiles] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const toast = useToast();
-
-  useEffect(() => {
-    api.inbox.list(engagementId)
-      .then(r => setFiles(Array.isArray(r) ? r : []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [engagementId]);
-
-  async function assign(fileId, itemId) {
-    try {
-      if (itemId) {
-        await api.inbox.assign(fileId, itemId);
-        toast('File assigned', 'success');
-      } else {
-        await api.inbox.unassign(fileId);
-        toast('File unassigned', 'success');
-      }
-      const updated = await api.inbox.list(engagementId);
-      setFiles(Array.isArray(updated) ? updated : []);
-    } catch (err) {
-      toast(err.message, 'error');
-    }
-  }
-
-  if (loading) return <div className="p-4 text-sm text-slate-400">Loading…</div>;
-  if (files.length === 0) return (
-    <div className="p-8 text-center">
-      <p className="text-sm text-slate-400">No files in inbox for this engagement.</p>
-      <p className="text-xs text-slate-400 mt-1">Files arrive automatically via WhatsApp.</p>
-    </div>
-  );
-
-  const unassigned = files.filter(f => !f.assignedItemId);
-  const assigned = files.filter(f => f.assignedItemId);
-
-  return (
-    <div>
-      {unassigned.length > 0 && (
-        <div className="mb-6">
-          <h3 className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-3">Unassigned ({unassigned.length})</h3>
-          <div className="space-y-2">
-            {unassigned.map(f => (
-              <div key={f.id} className="flex items-center gap-3 bg-paper border border-tint rounded-md px-4 py-3">
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-ink truncate">{f.filename}</div>
-                  <div className="text-xs text-slate-500">{new Date(f.receivedAt).toLocaleString()}</div>
-                </div>
-                <select
-                  defaultValue=""
-                  onChange={e => assign(f.id, e.target.value || null)}
-                  className="text-xs border border-tint rounded-md px-2 py-1 focus:outline-none focus:border-green"
-                >
-                  <option value="">Assign to item…</option>
-                  {items.map(it => (
-                    <option key={it.id} value={it.id}>{(it.p || '').slice(0, 60)}</option>
-                  ))}
-                </select>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      {assigned.length > 0 && (
-        <div>
-          <h3 className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-3">Assigned ({assigned.length})</h3>
-          <div className="space-y-2">
-            {assigned.map(f => {
-              const item = items.find(it => it.id === f.assignedItemId);
-              return (
-                <div key={f.id} className="flex items-center gap-3 bg-fog border border-tint rounded-md px-4 py-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm text-ink truncate">{f.filename}</div>
-                    <div className="text-xs text-slate-500 truncate">→ {item?.p || f.assignedItemId}</div>
-                  </div>
-                  <button onClick={() => assign(f.id, null)} className="text-xs text-slate-400 hover:text-deep">Unassign</button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ---- Documents tab ----
-function DocumentsTab({ engagementId }) {
   const [uploading, setUploading] = useState(false);
-  const fileRef = useRef();
-  const toast = useToast();
+  const tier = progressTier(it);
+  const edge = it.status === 'NA' ? 'border-transparent' : tier ? { watch: 'border-tint', flag: 'border-green', urgent: 'border-deep' }[tier] : it.status === 'Completed' ? 'border-tint' : 'border-transparent';
+  const isDone = it.status === 'Completed';
+  const overdue = it.due && it.due < today() && !isDone && it.status !== 'NA';
+  const hasFile = !!it.fileNote;
 
-  async function upload(e) {
-    const file = e.target.files[0];
-    if (!file) return;
+  async function uploadFile(file) {
     setUploading(true);
     const fd = new FormData();
     fd.append('file', file);
     fd.append('engagementId', engagementId);
+    fd.append('itemId', it.id);
     try {
       await api.documents.upload(fd);
+      const done = it.status === 'Completed' || it.status === 'NA';
+      await onChange({ fileNote: file.name, status: done ? it.status : 'Under Review', dateReceived: it.dateReceived || today(), queried: false });
       toast('File uploaded', 'success');
-      fileRef.current.value = '';
     } catch (err) {
       toast(err.message, 'error');
     } finally {
@@ -435,57 +61,299 @@ function DocumentsTab({ engagementId }) {
   }
 
   return (
-    <div>
-      <div className="mb-4 flex items-center gap-3">
-        <label className="cursor-pointer">
-          <span className="bg-green text-paper rounded-md px-4 py-2 text-sm font-medium hover:bg-deep transition-colors inline-block">
-            {uploading ? 'Uploading…' : 'Upload file'}
+    <div className={`group pl-3 pr-4 py-2 border-l-4 ${edge} ${it.status === 'NA' ? 'opacity-40' : ''} ${selected ? 'bg-fog/60' : ''} transition-colors`}>
+      <div className="flex items-center gap-3">
+        {selectMode && <input type="checkbox" checked={!!selected} onChange={onToggleSel} title="Select this task" className="shrink-0 accent-green" />}
+        <span className="font-mono text-[11px] text-slate-400 w-11 shrink-0">{it.ref !== '•' && it.ref !== '+' ? it.ref : ''}</span>
+        <span className="w-4 shrink-0 flex items-center justify-center" title={hasFile ? `File: ${it.fileNote}` : isDone ? 'Completed with no file on record' : it.requestable ? 'Client sends this' : 'Team does this'}>
+          {hasFile ? (
+            <span className="text-green">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+            </span>
+          ) : isDone ? (
+            <span className="w-2.5 h-2.5 rounded-full border border-green" />
+          ) : (
+            <span className={`w-1.5 h-1.5 rounded-full ${it.requestable ? 'bg-tint' : 'bg-deep/40'}`} />
+          )}
+        </span>
+        <span className={`flex-1 min-w-0 text-sm ${isDone ? 'text-slate-500' : 'text-ink'} ${it.status === 'NA' ? 'line-through' : ''}`}>
+          <span className="truncate block">
+            {it.p}
+            {it.due && !isDone && it.status !== 'NA' && (
+              <span className={`ml-1.5 text-[10px] ${overdue ? 'text-deep font-medium' : 'text-slate-400'}`}>{overdue ? 'overdue ' : 'due '}{it.due}</span>
+            )}
           </span>
-          <input ref={fileRef} type="file" className="sr-only" onChange={upload} disabled={uploading} />
-        </label>
-        <span className="text-xs text-slate-400">Attach documents to this engagement</span>
+        </span>
+        {tier && !selectMode && <span className={`text-[10px] tabular-nums shrink-0 ${TIER_STYLE[tier].text}`} title="Days since last progress">{ageLabel(noProgressDays(it))}</span>}
+        {it.status !== 'NA' && canEdit && <OwnerSelect value={it.owner} team={team} onChange={(v) => onChange({ owner: v })} />}
+        {canEdit ? <StatusSelect it={it} onChange={(v) => onChange(withStatus(it, v))} /> : (
+          <span className={`text-[11px] rounded-full border px-2.5 py-0.5 shrink-0 ${statusStyle(it)}`}>{statusLabel(it)}</span>
+        )}
+        <button onClick={() => setOpen(!open)} title="Details" className="text-slate-300 hover:text-slate-600 w-5 shrink-0 text-center">{open ? '▾' : '⋯'}</button>
       </div>
+      {open && (
+        <div className="mt-2 grid grid-cols-2 gap-2 pb-1" style={{ paddingLeft: '3.75rem' }}>
+          <label className="text-xs text-slate-500">
+            File
+            {hasFile ? (
+              <div className="mt-0.5 flex items-center gap-2 border border-tint rounded px-2 py-1 bg-paper">
+                <span className="text-xs text-ink truncate flex-1" title={it.fileNote}>{it.fileNote}</span>
+                {canEdit && <button onClick={() => onChange({ fileNote: '' })} className="text-xs text-slate-300 hover:text-deep" title="Clear reference">✕</button>}
+              </div>
+            ) : canEdit ? (
+              <label className="mt-0.5 block cursor-pointer text-xs text-green border border-dashed border-tint rounded px-2 py-1 hover:border-green hover:bg-fog text-center">
+                {uploading ? 'Uploading…' : 'Upload a file'}
+                <input type="file" className="hidden" disabled={uploading} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(f); }} />
+              </label>
+            ) : <div className="mt-0.5 text-xs text-slate-400">No file</div>}
+          </label>
+          <label className="text-xs text-slate-500">
+            W.P. ref / note
+            {canEdit ? <EditableText value={it.fileNote || ''} onSave={(v) => onChange({ fileNote: v })} placeholder="working-paper reference…" className="w-full mt-0.5 text-xs" />
+              : <div className="mt-0.5 text-xs text-ink">{it.fileNote || '—'}</div>}
+          </label>
+          <label className="text-xs text-slate-500 col-span-2">
+            Remarks
+            {canEdit ? <EditableText value={it.remarks || ''} onSave={(v) => onChange({ remarks: v })} placeholder="add a remark…" className="w-full mt-0.5 text-xs" />
+              : <div className="mt-0.5 text-xs text-ink">{it.remarks || '—'}</div>}
+          </label>
+          <div className="col-span-2 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-500">
+            <label className="flex items-center gap-2">
+              Received on
+              <input type="date" value={it.dateReceived || ''} max={today()} disabled={!canEdit} onChange={(e) => onChange({ dateReceived: e.target.value })} className="border border-tint rounded px-2 py-1 text-xs text-ink focus:outline-none focus:border-green disabled:opacity-60" />
+            </label>
+            <label className="flex items-center gap-2">
+              Due
+              <input type="date" value={it.due || ''} disabled={!canEdit} onChange={(e) => onChange({ due: e.target.value })} className="border border-tint rounded px-2 py-1 text-xs text-ink focus:outline-none focus:border-green disabled:opacity-60" />
+            </label>
+            {canEdit && (
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input type="checkbox" checked={!!it.requestable} onChange={(e) => onChange({ requestable: e.target.checked })} />
+                Client sends this
+              </label>
+            )}
+          </div>
+          <div className="col-span-2 flex items-center gap-4 text-xs text-slate-400">
+            {it.dateRequested && <span>Requested {it.dateRequested}</span>}
+            {it.followups > 0 && <span>{it.followups} reminder{it.followups > 1 ? 's' : ''}</span>}
+            <span className="flex-1" />
+            {onRemove && <button onClick={onRemove} className="text-slate-400 hover:text-deep">Delete task</button>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-// ---- Stage count bar ----
-function StageBar({ items, activeFilter, onFilter }) {
-  const counts = STATUSES.reduce((acc, s) => {
-    acc[s] = items.filter(i => i.status === s).length;
-    return acc;
-  }, {});
+function AddAdhoc({ onAdd, placeholder, label }) {
+  const [v, setV] = useState('');
+  const [open, setOpen] = useState(false);
+  if (!open) return <button onClick={() => setOpen(true)} className="px-4 py-1.5 text-xs text-green hover:bg-fog w-full text-left">{label || '+ Add item'}</button>;
+  const go = () => { if (v.trim()) { onAdd(v.trim()); setV(''); setOpen(false); } };
+  return (
+    <div className="px-4 py-2 flex gap-2">
+      <input autoFocus value={v} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') go(); if (e.key === 'Escape') { setV(''); setOpen(false); } }} placeholder={placeholder || 'Extra document needed…'} className="flex-1 border border-tint rounded px-2 py-1 text-xs focus:outline-none focus:border-green" />
+      <Btn size="sm" onClick={go}>Add</Btn>
+      <Btn size="sm" kind="ghost" onClick={() => { setV(''); setOpen(false); }}>Cancel</Btn>
+    </div>
+  );
+}
 
-  const pillColors = {
-    'No progress': 'bg-slate-100 text-slate-500 border-slate-200',
-    'Requested': 'bg-amber-50 text-amber-700 border-amber-200',
-    'Under Review': 'bg-blue-50 text-blue-700 border-blue-200',
-    'Completed': 'bg-fog text-green border-green/30',
-    'NA': 'bg-fog text-slate-400 border-tint',
-  };
+function ScopePanel({ orderedHeads, setHeadIncluded, onClose, updateItem }) {
+  const [openHead, setOpenHead] = useState(null);
+  const bySection = {};
+  for (const h of orderedHeads) (bySection[h.section] = bySection[h.section] || []).push(h);
+  const included = orderedHeads.filter((h) => h.items[0]?.headIncluded);
+  const totals = included.reduce((acc, h) => {
+    h.items.forEach((it) => { if (it.status !== 'NA') (it.requestable ? acc.client++ : acc.team++); });
+    return acc;
+  }, { client: 0, team: 0 });
 
   return (
-    <div className="flex flex-wrap gap-2 mb-4">
-      <button
-        onClick={() => onFilter(null)}
-        className={`text-xs px-3 py-1 rounded-full border transition-colors ${activeFilter === null ? 'bg-green text-paper border-green' : 'bg-paper text-slate-500 border-tint hover:border-green'}`}
-      >
-        All ({items.length})
-      </button>
-      {STATUSES.map(s => (
-        <button
-          key={s}
-          onClick={() => onFilter(activeFilter === s ? null : s)}
-          className={`text-xs px-3 py-1 rounded-full border transition-all ${activeFilter === s ? 'ring-2 ring-green ring-offset-1' : ''} ${pillColors[s]}`}
-        >
-          {STATUS_LABEL[s]} ({counts[s]})
-        </button>
-      ))}
-    </div>
+    <Modal title="Scope — which areas apply to this client" onClose={onClose} wide>
+      <div className="flex items-start justify-between gap-4 mb-4">
+        <p className="text-xs text-slate-600 max-w-lg">
+          Switch a heading on or off for this client. Inside a heading, each task is <span className="text-green font-medium">Client</span> (goes into WhatsApp requests)
+          or <span className="text-deep font-medium">Team work</span> (our team does it). Open a heading to change that per task for this client only.
+        </p>
+        <div className="text-right shrink-0 text-xs text-slate-600">
+          <div><span className="font-mono text-green text-base">{totals.client}</span> client tasks in scope</div>
+          <div><span className="font-mono text-deep text-base">{totals.team}</span> team work tasks in scope</div>
+        </div>
+      </div>
+      <div className="space-y-5 max-h-[60vh] overflow-y-auto pr-1">
+        {Object.entries(bySection).map(([sec, hs]) => (
+          <div key={sec}>
+            <div className="text-xs font-medium text-slate-600 mb-2">{sectionLabel(sec)}</div>
+            <div className="space-y-1.5">
+              {hs.map((h) => {
+                const on = h.items[0]?.headIncluded;
+                const c = h.items.filter((i) => i.requestable).length;
+                const t = h.items.length - c;
+                const open = openHead === h.headId;
+                return (
+                  <div key={h.headId} className={`rounded-lg border ${on ? 'border-green bg-fog/50' : 'border-tint bg-paper'}`}>
+                    <div className="flex items-center gap-2 px-3 py-2">
+                      <button onClick={() => setHeadIncluded(h.headId, !on)} aria-pressed={on} className={`w-4 h-4 rounded flex items-center justify-center text-[10px] shrink-0 ${on ? 'bg-green text-paper' : 'bg-tint text-transparent'}`} title={on ? 'In scope — click to remove' : 'Out of scope — click to include'}>✓</button>
+                      <span className={`flex-1 text-sm ${on ? 'text-ink' : 'text-slate-500'}`}>{h.sub}</span>
+                      <span className="text-xs tabular-nums text-slate-500 shrink-0"><span className="text-green">{c} client</span> · <span className="text-deep">{t} team</span></span>
+                      <button onClick={() => setOpenHead(open ? null : h.headId)} className="text-xs text-slate-500 hover:text-ink w-14 text-right" aria-expanded={open}>{open ? 'Close' : 'Tasks'}</button>
+                    </div>
+                    {open && (
+                      <div className="border-t border-tint divide-y divide-tint/60">
+                        {h.items.map((it) => (
+                          <div key={it.id} className="px-3 py-1.5 flex items-center gap-3">
+                            <span className="font-mono text-[11px] text-slate-500 w-11 shrink-0">{it.ref !== '•' && it.ref !== '+' ? it.ref : ''}</span>
+                            <span className={`flex-1 text-sm ${it.status === 'NA' ? 'line-through text-slate-400' : 'text-ink'}`}>{it.p}</span>
+                            <div className="flex rounded-md border border-tint overflow-hidden text-[11px] shrink-0" role="group" aria-label="Who provides this">
+                              <button onClick={() => updateItem(it.id, { requestable: true })} className={`px-2 py-0.5 ${it.requestable ? 'bg-green text-paper' : 'text-ink hover:bg-fog'}`}>Client</button>
+                              <button onClick={() => updateItem(it.id, { requestable: false })} className={`px-2 py-0.5 border-l border-tint ${!it.requestable ? 'bg-deep text-paper' : 'text-ink hover:bg-fog'}`}>Team work</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-end pt-4"><Btn onClick={onClose}>Done</Btn></div>
+    </Modal>
   );
 }
 
-// ---- Main component ----
+function ComposeModal({ compose, setCompose, phone, onConfirm }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try { await navigator.clipboard.writeText(compose.text); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {}
+  }
+  const parts = [
+    compose.fresh.length && `${compose.fresh.length} new request${compose.fresh.length > 1 ? 's' : ''}`,
+    compose.awaited.length && `${compose.awaited.length} reminder${compose.awaited.length > 1 ? 's' : ''}`,
+    compose.resend.length && `${compose.resend.length} resend${compose.resend.length > 1 ? 's' : ''}`,
+  ].filter(Boolean).join(' · ');
+  return (
+    <Modal title="Message client" onClose={() => setCompose(null)} wide>
+      <p className="text-xs text-slate-500 mb-3">
+        {parts} · to +{phone || '—'}. Edit the wording if you like. New requests move to Awaited when you send; reminders are counted.
+        {compose.skipped > 0 && <span className="text-slate-400"> {compose.skipped} ticked item{compose.skipped > 1 ? 's' : ''} left out — received, complete, N/A or team work.</span>}
+      </p>
+      <textarea value={compose.text} onChange={(e) => setCompose({ ...compose, text: e.target.value })} className="w-full h-64 border border-tint rounded-lg p-3 text-sm font-mono text-ink bg-fog focus:outline-none resize-none" />
+      <div className="flex items-center justify-between pt-4">
+        <Btn kind="ghost" onClick={copy}>{copied ? 'Copied ✓' : 'Copy text'}</Btn>
+        <div className="flex gap-2">
+          <Btn kind="ghost" onClick={() => setCompose(null)}>Cancel</Btn>
+          <Btn kind="ghost" onClick={() => onConfirm(false)} title="Record this as sent without opening WhatsApp">Mark as sent</Btn>
+          <Btn onClick={() => onConfirm(true)} disabled={!phone}>Open WhatsApp</Btn>
+        </div>
+      </div>
+      {!phone && <p className="text-xs text-deep mt-2 text-right">No WhatsApp number on file — add one on the Clients page, or use Mark as sent.</p>}
+    </Modal>
+  );
+}
+
+function FilesModal({ engagementId, files, heads, onClose, onAdd, onMatch, onUnmatch, onRemove, canDelete }) {
+  const unmatched = files.filter((f) => !f.assignedItemId);
+  const matched = files.filter((f) => f.assignedItemId);
+  const [cur, setCur] = useState(unmatched[0]?.id || null);
+  const [q, setQ] = useState('');
+  const [showMatched, setShowMatched] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const unmatchedKey = unmatched.map((f) => f.id).join(',');
+  useEffect(() => { if (!unmatched.some((f) => f.id === cur)) setCur(unmatched[0]?.id || null); }, [unmatchedKey]);
+
+  const itemById = {};
+  for (const h of heads) for (const it of h.items) itemById[it.id] = it;
+  const ql = q.trim().toLowerCase();
+  const targets = heads.flatMap((h) => h.items.filter((it) => it.status !== 'NA' && (!ql || it.p.toLowerCase().includes(ql) || h.sub.toLowerCase().includes(ql))).map((it) => ({ it, h })));
+  const curFile = unmatched.find((f) => f.id === cur);
+
+  async function openFile(f) {
+    try { const { url } = await api.documents.downloadUrl(f.id); window.open(url, '_blank'); } catch {}
+  }
+
+  async function handleAdd(fileList) {
+    setUploading(true);
+    try { await onAdd(fileList); } finally { setUploading(false); }
+  }
+
+  return (
+    <Modal title="Files" onClose={onClose} wide>
+      <div className="flex items-start justify-between gap-4 mb-3">
+        <p className="text-xs text-slate-600 max-w-lg">Everything the client sends lands here. Pick a file on the left, then the task it belongs to on the right; the task moves to <span className="font-medium text-ink">To review</span>.</p>
+        <label className="cursor-pointer shrink-0">
+          <span className="inline-block text-sm px-4 py-2 rounded-md bg-green text-paper hover:bg-deep">{uploading ? 'Uploading…' : 'Add files'}</span>
+          <input type="file" multiple className="hidden" disabled={uploading} onChange={(e) => { if (e.target.files?.length) handleAdd(e.target.files); e.target.value = ''; }} />
+        </label>
+      </div>
+      <div className="grid md:grid-cols-5 gap-4">
+        <div className="md:col-span-2">
+          <div className="text-xs font-medium text-slate-600 mb-1">Unmatched <span className="font-mono text-slate-400">{unmatched.length}</span></div>
+          {unmatched.length === 0 ? (
+            <div className="border border-dashed border-tint rounded-lg p-6 text-center text-xs text-slate-500">{files.length ? 'Everything is matched.' : 'Nothing received yet. Add files, or wait for WhatsApp.'}</div>
+          ) : (
+            <div className="border border-tint rounded-lg divide-y divide-tint/60 max-h-[50vh] overflow-y-auto">
+              {unmatched.map((f) => (
+                <button key={f.id} onClick={() => setCur(f.id)} aria-pressed={cur === f.id} className={`w-full text-left px-3 py-2 border-l-4 ${cur === f.id ? 'bg-fog border-green' : 'border-transparent hover:bg-fog/60'}`}>
+                  <div className="text-sm text-ink truncate" title={f.name}>{f.name}</div>
+                  <div className="text-xs text-slate-500 truncate">{fmtSize(f.size)}{f.uploadedAt ? ` · ${f.uploadedAt}` : ''}{f.source === 'whatsapp' ? ' · WhatsApp' : ''}{f.sender ? ` · ${f.sender}` : ''}</div>
+                </button>
+              ))}
+            </div>
+          )}
+          {curFile && (
+            <div className="mt-2 flex gap-3 text-xs">
+              <button onClick={() => openFile(curFile)} className="text-green hover:underline underline-offset-2">Open</button>
+              {canDelete && <button onClick={() => { if (confirm('Delete this file?')) onRemove(curFile.id); }} className="text-slate-400 hover:text-deep">Delete</button>}
+            </div>
+          )}
+        </div>
+        <div className="md:col-span-3">
+          <div className="text-xs font-medium text-slate-600 mb-1">{curFile ? <>Which task is <span className="text-ink">{curFile.name}</span>?</> : 'Task'}</div>
+          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a task, e.g. bank statement" aria-label="Find a task" disabled={!curFile} className="w-full mb-2 text-sm border border-tint rounded-md px-3 py-1.5 bg-paper focus:outline-none focus:border-green disabled:opacity-50" />
+          {!curFile ? <p className="text-xs text-slate-400 py-6 text-center">Add or pick a file first.</p>
+            : targets.length === 0 ? <p className="text-xs text-slate-400 py-6 text-center">No document task matches{ql ? ` "${q}"` : ''}.</p>
+            : (
+              <div className="border border-tint rounded-lg divide-y divide-tint/60 max-h-[50vh] overflow-y-auto">
+                {targets.slice(0, 120).map(({ it, h }) => (
+                  <button key={it.id} onClick={() => { onMatch(curFile.id, it.id); setQ(''); }} className="w-full flex items-center gap-3 px-3 py-2 hover:bg-fog text-left">
+                    <span className="font-mono text-[11px] text-slate-400 w-11 shrink-0">{it.ref !== '•' && it.ref !== '+' ? it.ref : ''}</span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-sm text-ink truncate">{it.p}</span>
+                      <span className="block text-xs text-slate-400 truncate">{h.sub}</span>
+                    </span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full border shrink-0 ${statusStyle(it)}`}>{statusLabel(it)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+        </div>
+      </div>
+      {matched.length > 0 && (
+        <div className="mt-4">
+          <button onClick={() => setShowMatched(!showMatched)} className="text-xs text-slate-500 hover:text-ink">{showMatched ? 'Hide' : 'Show'} matched files ({matched.length})</button>
+          {showMatched && (
+            <div className="mt-2 border border-tint rounded-lg divide-y divide-tint/60 max-h-[30vh] overflow-y-auto">
+              {matched.map((f) => (
+                <div key={f.id} className="px-3 py-2 flex items-center gap-3">
+                  <button onClick={() => openFile(f)} className="text-sm text-ink hover:text-green hover:underline underline-offset-2 truncate flex-1 text-left" title={f.name}>{f.name}</button>
+                  <span className="text-xs text-green truncate max-w-[240px]" title={itemById[f.assignedItemId]?.p}>{itemById[f.assignedItemId]?.p || 'a task'}</span>
+                  <button onClick={() => onUnmatch(f.id)} className="text-xs text-slate-400 hover:text-ink shrink-0">Unmatch</button>
+                  {canDelete && <button onClick={() => { if (confirm('Delete this file?')) onRemove(f.id); }} className="text-xs text-slate-400 hover:text-deep shrink-0">Delete</button>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      <div className="flex justify-end pt-4"><Btn onClick={onClose}>Done</Btn></div>
+    </Modal>
+  );
+}
+
 export default function EngagementDetail() {
   const { id } = useParams();
   const { user } = useAuth();
@@ -494,29 +362,30 @@ export default function EngagementDetail() {
   const [engagement, setEngagement] = useState(null);
   const [client, setClient] = useState(null);
   const [items, setItems] = useState([]);
-  const [teamMembers, setTeamMembers] = useState([]);
+  const [files, setFiles] = useState([]);
+  const [team, setTeam] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState('checklist');
-  const [showAdhoc, setShowAdhoc] = useState(false);
-  const [showScope, setShowScope] = useState(false);
-  const [adhocDesc, setAdhocDesc] = useState('');
-  const [statusFilter, setStatusFilter] = useState(null);
+  const [scoping, setScoping] = useState(false);
+  const [compose, setCompose] = useState(null);
+  const [collapsed, setCollapsed] = useState({});
+  const [selecting, setSelecting] = useState(false);
+  const [sel, setSel] = useState({});
+  const [filesOpen, setFilesOpen] = useState(false);
+  const [stageFilter, setStageFilter] = useState(null);
+  const [q, setQ] = useState('');
 
-  const canEdit = user?.role === 'partner' || user?.role === 'manager' ||
-    (user?.role === 'student' && engagement?.incharge === user?.name);
+  const canEdit = user?.role === 'partner' || user?.role === 'manager' || (user?.role === 'student' && engagement?.incharge === user?.name);
   const isPartnerManager = user?.role === 'partner' || user?.role === 'manager';
+  const canDeleteFiles = isPartnerManager;
+  const td = today();
 
   async function load() {
     try {
-      const [eng, its] = await Promise.all([
-        api.engagements.get(id),
-        api.items.list(id),
-      ]);
+      const [eng, its, fls] = await Promise.all([api.engagements.get(id), api.items.list(id), api.inbox.list(id)]);
       setEngagement(eng);
       setItems(Array.isArray(its) ? its : []);
-      if (eng.clientId) {
-        api.clients.get(eng.clientId).then(setClient).catch(() => {});
-      }
+      setFiles(Array.isArray(fls) ? fls : []);
+      if (eng.clientId) api.clients.get(eng.clientId).then(setClient).catch(() => {});
     } catch (err) {
       toast(err.message, 'error');
     } finally {
@@ -527,198 +396,366 @@ export default function EngagementDetail() {
   useEffect(() => { load(); }, [id]);
 
   useEffect(() => {
-    if (user?.role !== 'student') {
-      api.team.list().then(t => setTeamMembers(Array.isArray(t) ? t.filter(m => m.active !== false) : [])).catch(() => {});
-    }
+    if (user?.role !== 'student') api.team.list().then((t) => setTeam(Array.isArray(t) ? t.filter((m) => m.active !== false) : [])).catch(() => {});
   }, [user]);
 
-  async function updateItem(itemId, data) {
-    await api.items.update(itemId, data);
-    setItems(prev => prev.map(it => it.id === itemId ? { ...it, ...data } : it));
+  async function updateItem(itemId, patch) {
+    const clean = { ...patch };
+    delete clean.id;
+    if (!Object.keys(clean).length) return;
+    setItems((prev) => prev.map((it) => (it.id === itemId ? { ...it, ...clean } : it)));
+    try {
+      await api.items.update(itemId, clean);
+    } catch (err) {
+      toast(err.message, 'error');
+      load();
+    }
   }
 
-  async function addAdhoc() {
-    if (!adhocDesc.trim()) return;
+  async function removeItem(itemId) {
+    try { await api.items.delete(itemId); setItems((prev) => prev.filter((it) => it.id !== itemId)); toast('Task deleted', 'success'); }
+    catch (err) { toast(err.message, 'error'); }
+  }
+
+  async function commitEng(patch) {
+    setEngagement((prev) => ({ ...prev, ...patch }));
+    try { await api.engagements.update(id, patch); } catch (err) { toast(err.message, 'error'); load(); }
+  }
+
+  async function setHeadIncluded(headId, val) {
+    const ids = items.filter((it) => it.headId === headId).map((it) => it.id);
+    setItems((prev) => prev.map((it) => (it.headId === headId ? { ...it, headIncluded: val } : it)));
+    try { await api.items.bulkUpdate(ids.map((i) => ({ id: i, headIncluded: val }))); } catch (err) { toast(err.message, 'error'); load(); }
+  }
+
+  async function addFiles(fileList) {
     try {
-      await api.items.addAdhoc({ engagementId: id, p: adhocDesc.trim() });
-      toast('Ad-hoc item added', 'success');
-      setAdhocDesc('');
-      setShowAdhoc(false);
+      for (const f of Array.from(fileList)) {
+        const fd = new FormData();
+        fd.append('file', f);
+        fd.append('engagementId', id);
+        await api.documents.upload(fd);
+      }
+      const fls = await api.inbox.list(id);
+      setFiles(Array.isArray(fls) ? fls : []);
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  }
+
+  async function matchFile(fileId, itemId) {
+    try {
+      await api.inbox.assign(fileId, itemId);
+      const it = items.find((x) => x.id === itemId);
+      if (it && it.status !== 'Completed' && it.status !== 'NA') {
+        await api.items.update(itemId, { status: 'Under Review', dateReceived: it.dateReceived || td, queried: false });
+      }
+      toast('File matched to task', 'success');
       load();
     } catch (err) {
       toast(err.message, 'error');
     }
   }
 
-  async function rollForward() {
-    if (!confirm('Roll forward to next year? This creates a new engagement with all items reset to "No progress".')) return;
+  async function unmatchFile(fileId) {
     try {
-      const result = await api.engagements.rollForward(id);
-      toast('Rolled forward to FY ' + result.year, 'success');
-      navigate(`/engagements/${result.id}`);
+      const f = files.find((x) => x.id === fileId);
+      await api.inbox.unassign(fileId);
+      if (f?.assignedItemId) {
+        const it = items.find((x) => x.id === f.assignedItemId);
+        if (it && it.status === 'Under Review') {
+          await api.items.update(it.id, { status: it.dateRequested ? 'Requested' : 'No progress' });
+        }
+      }
+      load();
     } catch (err) {
       toast(err.message, 'error');
     }
   }
 
-  if (loading) return <div className="p-8 text-sm text-slate-400">Loading…</div>;
-  if (!engagement) return <div className="p-8 text-sm text-deep">Engagement not found.</div>;
-
-  const today = new Date().toISOString().split('T')[0];
-  const isOverdue = engagement.deadline && engagement.deadline < today;
-
-  // Only show items where headIncluded is not explicitly false
-  const scopedItems = items.filter(it => it.headIncluded !== false);
-
-  const total = scopedItems.length;
-  const done = scopedItems.filter(it => it.status === 'Completed').length;
-  const pct = total ? Math.round((done / total) * 100) : 0;
-
-  // Filter by status if active
-  const visibleItems = statusFilter ? scopedItems.filter(it => it.status === statusFilter) : scopedItems;
-
-  // Group by headId then sub
-  const grouped = {};
-  for (const it of visibleItems) {
-    const key = it.headId || 'Ungrouped';
-    if (!grouped[key]) grouped[key] = { label: it.sub || it.section || key, items: [] };
-    grouped[key].items.push(it);
+  async function removeFile(fileId) {
+    try { await api.documents.delete(fileId); setFiles((prev) => prev.filter((f) => f.id !== fileId)); }
+    catch (err) { toast(err.message, 'error'); }
   }
-  const groupEntries = Object.entries(grouped);
 
-  const TABS = [
-    { id: 'checklist', label: `Checklist (${total})` },
-    { id: 'inbox', label: 'Inbox' },
-    { id: 'documents', label: 'Documents' },
-  ];
+  async function removeYear() {
+    if (!confirm(`Remove FY ${engagement.year} for ${client?.name || 'this client'}? Its ledger and files go; the client and other years stay.`)) return;
+    try { await api.engagements.delete(id); toast(`FY ${engagement.year} removed`, 'info'); navigate('/'); }
+    catch (err) { toast(err.message, 'error'); }
+  }
+
+  if (loading) return <div className="p-8 text-slate-400">Loading…</div>;
+  if (!engagement) return <div className="p-8 text-slate-400">Engagement not found.</div>;
+
+  const m = engMetrics({ ...engagement, items }, files);
+  const phone = normalizePhone(client?.phone || engagement.contactPhone);
+
+  // ---- headings, ad-hoc always last, always present ----
+  const heads = {};
+  for (const it of items) (heads[it.headId] = heads[it.headId] || { headId: it.headId, section: it.section, sub: it.sub, items: [] }).items.push(it);
+  if (!heads['adhoc']) heads['adhoc'] = { headId: 'adhoc', section: 'Z', sub: 'Ad-hoc', items: [] };
+  const seenOrder = {};
+  items.forEach((it, i) => { if (seenOrder[it.headId] === undefined) seenOrder[it.headId] = i; });
+  const ord = (h) => (h.headId === 'adhoc' ? 1e9 : (seenOrder[h.headId] ?? 999));
+  const orderedHeads = Object.values(heads).sort((a, b) => ord(a) - ord(b));
+  const libraryHeads = orderedHeads.filter((h) => h.headId !== 'adhoc');
+  const includedHeads = orderedHeads.filter((h) => h.headId === 'adhoc' || h.items[0]?.headIncluded);
+  const scopedIn = includedHeads.filter((h) => h.headId !== 'adhoc');
+
+  const stageCount = {};
+  items.forEach((it) => { const st = stageOf(it); if (st) stageCount[st] = (stageCount[st] || 0) + 1; });
+  const naCount = items.filter((it) => it.headIncluded && it.status === 'NA').length;
+
+  const ql = q.trim().toLowerCase();
+  const visibleHeads = includedHeads
+    .map((h) => ({ ...h, items: h.items.filter((it) => (stageFilter === 'na' ? it.status === 'NA' : (!stageFilter || stageOf(it) === stageFilter)) && (!ql || it.p.toLowerCase().includes(ql) || (it.ref || '').toLowerCase().includes(ql) || (it.owner || '').toLowerCase().includes(ql))) }))
+    .filter((h) => h.items.length > 0 || (h.headId === 'adhoc' && !stageFilter && !ql));
+
+  function startSelect(pick) {
+    const n = {};
+    items.forEach((it) => { if (!pick || pick(it)) n[it.id] = true; });
+    setSel(n);
+    setSelecting(true);
+  }
+  function stopSelect() { setSelecting(false); setSel({}); }
+  const selItems = items.filter((it) => sel[it.id] && it.headIncluded);
+  const preview = composeMessage(engagement, client, selItems);
+  const messageable = preview.fresh.length + preview.awaited.length + preview.resend.length;
+  const owed = items.filter(owedToUs).length;
+
+  function openCompose() { if (messageable === 0) return; setCompose({ items: selItems, ...preview }); }
+
+  async function confirmSend(openWa = true) {
+    const patches = afterSend(items, compose);
+    setItems((prev) => prev.map((it) => { const p = patches.find((x) => x.id === it.id); return p ? { ...it, ...p.patch } : it; }));
+    try {
+      await api.items.bulkUpdate(patches.map((p) => ({ id: p.id, ...p.patch })));
+      if (openWa && phone) window.open(`https://wa.me/${phone}?text=${encodeURIComponent(compose.text)}`, '_blank');
+      toast(openWa ? 'Opening WhatsApp — requests moved to Awaited' : 'Marked as sent — requests moved to Awaited', 'success');
+    } catch (err) {
+      toast(err.message, 'error');
+      load();
+    }
+    setCompose(null);
+    stopSelect();
+  }
+
+  async function assignSelected(v) {
+    const ids = Object.keys(sel).filter((k) => sel[k]);
+    try { await api.items.bulkUpdate(ids.map((i) => ({ id: i, owner: v === '__none' ? '' : v }))); load(); }
+    catch (err) { toast(err.message, 'error'); }
+    stopSelect();
+  }
+
+  const nextStep = (() => {
+    if (libraryHeads.length > 0 && scopedIn.length === 0) return { text: 'Start by choosing which areas apply to this client.', action: 'scope' };
+    if (stageCount.request) return { text: `${stageCount.request} request${stageCount.request > 1 ? "s haven't" : " hasn't"} been sent to the client yet.`, action: 'request' };
+    if (stageCount.review) return { text: `${stageCount.review} file${stageCount.review > 1 ? 's are' : ' is'} in and waiting for review.`, action: 'review' };
+    if (stageCount.awaited) return { text: `Waiting on the client for ${stageCount.awaited} item${stageCount.awaited > 1 ? 's' : ''}. Send a reminder if it has been a while.`, action: 'followup' };
+    if (stageCount.internal) return { text: `${stageCount.internal} item${stageCount.internal > 1 ? 's' : ''} left for the team.`, action: 'internal' };
+    if (items.length === 0) return { text: 'Nothing here yet. Add a task below.', action: null };
+    return { text: 'Everything for this client is complete.', action: null };
+  })();
+
+  function doNext(action) {
+    if (action === 'scope') setScoping(true);
+    else if (action === 'request') startSelect((it) => it.headIncluded && it.requestable && it.status === 'No progress');
+    else if (action === 'followup') startSelect((it) => owedToUs(it) && it.status === 'Requested');
+    else if (action === 'review') setStageFilter('review');
+    else if (action === 'internal') setStageFilter('internal');
+  }
+
+  const daysLeft = m.daysLeft;
+  const dueText = daysLeft == null ? '' : m.pct === 100 ? 'done' : daysLeft < 0 ? `overdue by ${-daysLeft} day${daysLeft === -1 ? '' : 's'}` : daysLeft === 0 ? 'due today' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`;
 
   return (
-    <div className="stagger p-8 max-w-5xl">
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-xs text-slate-400 mb-4">
-        <button onClick={() => navigate('/clients')} className="hover:text-ink">Clients</button>
-        {client && <>
-          <span>/</span>
-          <button onClick={() => navigate(`/clients/${client.id}`)} className="hover:text-ink">{client.name}</button>
-        </>}
-        <span>/</span>
-        <span className="text-ink">FY {engagement.year}</span>
+    <div className="stagger p-8 max-w-4xl">
+      <div className="mb-3 flex items-center justify-between">
+        <button onClick={() => navigate('/')} className="text-xs text-slate-400 hover:text-slate-600">Back to overview</button>
+        {user?.role === 'partner' && (
+          <button onClick={removeYear} className="text-xs text-slate-400 hover:text-deep" title="Delete this year for this client.">Remove this year</button>
+        )}
       </div>
 
-      {/* Header */}
-      <header className="mb-6">
+      <header className="mb-5">
         <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="font-serif text-[28px] leading-[1.15] font-medium text-ink tracking-[-0.01em]">
-              {client?.name || '…'} · FY {engagement.year}
-            </h1>
-            <div className="mt-2 h-px w-12 bg-green" />
-            <div className="mt-2 flex flex-wrap gap-4 text-xs text-slate-500">
-              <span className="capitalize">{engagement.module}</span>
-              {engagement.incharge && <span>In-charge: {engagement.incharge}</span>}
-              {engagement.deadline && (
-                <span className={isOverdue ? 'text-deep font-medium' : ''}>
-                  {isOverdue ? 'Overdue · ' : 'Deadline: '}{engagement.deadline}
-                </span>
+          <div className="min-w-0">
+            <h1 className="font-serif text-[32px] leading-[1.15] font-medium text-ink tracking-[-0.01em] truncate">{client?.name}</h1>
+            <div className="mt-3 h-px w-12 bg-green" />
+            <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mt-1 text-sm text-slate-500">
+              <span>FY {engagement.year}</span>
+              {engagement.rolledFrom && <span className="text-xs text-green bg-fog px-2 py-0.5 rounded-full">rolled forward</span>}
+              {client?.phone && <span className="text-slate-400 text-xs">+{normalizePhone(client.phone)}</span>}
+              <label className="flex items-center gap-1.5 text-xs text-slate-400" title="When this year's work must be finished.">
+                Due
+                <input type="date" value={engagement.deadline || ''} disabled={!isPartnerManager} onChange={(e) => commitEng({ deadline: e.target.value })} className={`text-xs rounded-full border px-2 py-0.5 bg-paper focus:outline-none focus:border-green ${engagement.deadline ? 'text-ink border-tint' : 'text-slate-400 border-green'}`} />
+                {dueText && <span className={daysLeft < 0 && m.pct < 100 ? 'text-deep font-medium' : daysLeft <= 7 && m.pct < 100 ? 'text-green' : 'text-slate-400'}>{dueText}</span>}
+              </label>
+              <label className="flex items-center gap-1.5 text-xs text-slate-400">
+                In-charge
+                <select value={engagement.incharge || ''} disabled={!isPartnerManager} onChange={(e) => commitEng({ incharge: e.target.value })} className={`text-xs rounded-full border px-2 py-0.5 bg-paper focus:outline-none focus:border-green ${engagement.incharge ? 'text-ink border-tint' : 'text-slate-400 border-green'}`}>
+                  <option value="">Unassigned</option>
+                  {team.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
+                </select>
+              </label>
+              {isPartnerManager && (
+                <label className="flex items-center gap-1 text-xs text-slate-400" title="The client's WhatsApp group.">
+                  Group
+                  <EditableText value={engagement.waGroupId || ''} onSave={(v) => commitEng({ waGroupId: v.trim() })} placeholder="not linked" className="text-xs w-24" mono />
+                </label>
               )}
             </div>
           </div>
-
-          {/* Progress ring */}
-          <div className="shrink-0 flex flex-col items-center gap-1">
-            <svg width="56" height="56" viewBox="0 0 56 56">
-              <circle cx="28" cy="28" r="22" fill="none" stroke="#C9DBD2" strokeWidth="5" />
-              <circle
-                cx="28" cy="28" r="22" fill="none"
-                stroke="#147B58" strokeWidth="5"
-                strokeDasharray={`${2 * Math.PI * 22}`}
-                strokeDashoffset={`${2 * Math.PI * 22 * (1 - pct / 100)}`}
-                strokeLinecap="round"
-                transform="rotate(-90 28 28)"
-              />
-              <text x="28" y="33" textAnchor="middle" className="font-mono" fontSize="11" fill="#1C1C1C">{pct}%</text>
-            </svg>
-            <span className="text-[10px] text-slate-400">{done}/{total} done</span>
+          <div className="text-right shrink-0">
+            <div className="text-3xl font-semibold text-ink tabular-nums">{m.pct}%</div>
+            <div className="font-mono text-[11px] text-slate-500">{m.done} / {m.total} complete</div>
           </div>
         </div>
-
-        {/* Actions */}
-        {isPartnerManager && (
-          <div className="mt-4 flex gap-2">
-            <Btn size="sm" kind="ghost" onClick={() => setShowAdhoc(true)}>+ Ad-hoc item</Btn>
-            <Btn size="sm" kind="ghost" onClick={() => setShowScope(true)}>Scope</Btn>
-            <Btn size="sm" kind="ghost" onClick={rollForward}>Roll forward →</Btn>
-          </div>
-        )}
+        <div className="mt-3 h-1.5 bg-fog rounded-full overflow-hidden"><div className="h-full bg-green rounded-full" style={{ width: m.pct + '%' }} /></div>
       </header>
 
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-tint mb-6">
-        {TABS.map(t => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`px-4 py-2 text-sm transition-colors border-b-2 -mb-px ${
-              tab === t.id ? 'border-green text-ink font-medium' : 'border-transparent text-slate-500 hover:text-ink'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="mb-3 bg-fog rounded-lg overflow-hidden grid grid-cols-5 divide-x divide-tint">
+        {STAGES.map(([key, label, hint]) => {
+          const n = stageCount[key] || 0;
+          const on = stageFilter === key;
+          return (
+            <button key={key} onClick={() => setStageFilter(on ? null : key)} title={hint} className={`text-left px-4 py-3 transition-colors ${on ? 'bg-paper' : 'hover:bg-paper/60'} ${n === 0 ? 'opacity-50' : ''}`}>
+              <div className={`font-serif text-[26px] leading-none font-medium tabular-nums ${on || key === 'complete' ? 'text-green' : 'text-ink'}`}>{n}</div>
+              <div className="text-xs text-slate-600 mt-1">{label}</div>
+            </button>
+          );
+        })}
       </div>
 
-      {/* Checklist */}
-      {tab === 'checklist' && (
-        <div>
-          {total > 0 && (
-            <StageBar items={scopedItems} activeFilter={statusFilter} onFilter={setStatusFilter} />
-          )}
+      <div className="mb-5 flex items-center gap-3 flex-wrap text-sm">
+        <span className="text-ink">
+          <span className="text-slate-500">Next:</span>{' '}
+          {nextStep.action && isPartnerManager
+            ? <button onClick={() => doNext(nextStep.action)} className="text-left text-ink hover:text-green underline decoration-tint underline-offset-4">{nextStep.text}</button>
+            : nextStep.text}
+        </span>
+        {stageFilter && <button onClick={() => setStageFilter(null)} className="text-xs text-green hover:underline underline-offset-2">Show all</button>}
+        {naCount > 0 && stageFilter !== 'na' && <button onClick={() => setStageFilter('na')} className="text-xs text-slate-500 hover:text-ink" title="Not applicable to this client.">{naCount} N/A</button>}
+      </div>
 
-          {groupEntries.length === 0 ? (
-            <p className="text-sm text-slate-400">No items{statusFilter ? ` with status "${STATUS_LABEL[statusFilter] || statusFilter}"` : ''}.</p>
-          ) : (
-            groupEntries.map(([key, { label, items: groupItems }]) => (
-              <SectionGroup
-                key={key}
-                label={label}
-                items={groupItems}
-                onUpdate={updateItem}
-                canEdit={canEdit}
-                teamMembers={teamMembers}
-              />
-            ))
+      {canEdit && (
+        <div className="sticky top-0 z-20 -mx-8 px-8 py-3 mb-4 bg-paper border-b border-tint flex flex-wrap items-center gap-2">
+          {selecting ? <Btn onClick={stopSelect} kind="ghost">Cancel</Btn> : (
+            <>
+              <Btn onClick={() => startSelect(owedToUs)} disabled={owed === 0} title={owed ? `Everything the client owes (${owed}) is ticked; untick what you don't want to send.` : 'The client owes nothing right now'}>
+                Message client{owed ? <span className="ml-2 text-[11px] font-normal text-paper/80 tabular-nums">{owed}</span> : null}
+              </Btn>
+              <Btn onClick={() => startSelect(null)} kind="ghost" title="Tick tasks to assign them to someone, or to message a custom set">Select</Btn>
+            </>
+          )}
+          <Btn onClick={() => setFilesOpen(true)} kind="ghost" title="Files the client sent. Match each one to its task.">
+            Files{m.files > 0 ? <span className="ml-2 text-[11px] font-medium text-paper bg-green rounded-full px-1.5 py-px tabular-nums">{m.files}</span> : files.length > 0 ? <span className="ml-2 text-[11px] text-slate-400 tabular-nums">{files.length}</span> : null}
+          </Btn>
+          {libraryHeads.length > 0 && <Btn onClick={() => setScoping(true)} kind="ghost" title="Choose which areas apply to this client">Scope</Btn>}
+          <div className="flex-1" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a task" aria-label="Find a task in this ledger" className="text-sm border border-tint rounded-md px-3 py-1.5 bg-paper w-40 focus:outline-none focus:border-green" />
+          {scopedIn.length > 1 && (
+            <button onClick={() => { const all = scopedIn.every((h) => collapsed[h.headId]); const next = {}; scopedIn.forEach((h) => (next[h.headId] = !all)); setCollapsed(next); }} className="text-xs text-slate-400 hover:text-ink">
+              {scopedIn.every((h) => collapsed[h.headId]) ? 'Expand all' : 'Collapse all'}
+            </button>
           )}
         </div>
       )}
 
-      {/* Inbox */}
-      {tab === 'inbox' && <InboxTab engagementId={id} items={scopedItems} />}
-
-      {/* Documents */}
-      {tab === 'documents' && <DocumentsTab engagementId={id} />}
-
-      {/* Ad-hoc modal */}
-      {showAdhoc && (
-        <Modal title="Add ad-hoc item" onClose={() => setShowAdhoc(false)}>
-          <Field
-            label="Description"
-            value={adhocDesc}
-            onChange={setAdhocDesc}
-            placeholder="Describe the additional item…"
-          />
-          <div className="flex justify-end gap-2 pt-1">
-            <Btn kind="ghost" onClick={() => setShowAdhoc(false)}>Cancel</Btn>
-            <Btn onClick={addAdhoc} disabled={!adhocDesc.trim()}>Add item</Btn>
-          </div>
-        </Modal>
+      {selecting && (
+        <div className="mb-4 rounded-lg border border-tint bg-fog px-4 py-2.5 text-sm text-ink flex flex-wrap items-center gap-x-4 gap-y-2">
+          <span>Tick tasks — one at a time or a whole heading — then message the client or assign them from the bar below.</span>
+          <span className="flex-1" />
+          <button onClick={() => startSelect(owedToUs)} className="text-xs text-green hover:underline underline-offset-2">Everything owed</button>
+          <button onClick={() => startSelect((it) => it.headIncluded && it.requestable && it.status === 'No progress')} className="text-xs text-green hover:underline underline-offset-2">Not yet requested</button>
+          <button onClick={() => startSelect((it) => owedToUs(it) && it.status === 'Requested')} className="text-xs text-green hover:underline underline-offset-2">Awaited</button>
+          <button onClick={() => setSel({})} className="text-xs text-slate-600 hover:underline underline-offset-2">Clear</button>
+        </div>
       )}
 
-      {/* Scope modal */}
-      {showScope && (
-        <ScopeModal
-          items={items}
-          onClose={() => setShowScope(false)}
-          onSaved={load}
+      {libraryHeads.length === 0 && items.length === 0 && (
+        <p className="mb-4 text-sm text-slate-500">This library is empty, so this year has no standard tasks. Add categories and tasks in Library, or just add tasks below.</p>
+      )}
+      {libraryHeads.length > 0 && scopedIn.length === 0 && (
+        <div className="mb-4 border border-dashed border-tint rounded-xl p-6 text-center">
+          <p className="text-sm text-ink">No areas scoped in yet.</p>
+          <p className="text-xs text-slate-400 mt-1 mb-3">Choose which financial-statement areas apply to this client.</p>
+          {isPartnerManager && <Btn onClick={() => setScoping(true)}>Choose areas</Btn>}
+        </div>
+      )}
+
+      <section aria-label="Tasks" className="space-y-2">
+        {visibleHeads.length === 0 && <p className="text-sm text-slate-500 py-4 px-1">No tasks here.</p>}
+        {visibleHeads.map((h) => {
+          const adhoc = h.headId === 'adhoc';
+          const isC = collapsed[h.headId] && !ql && !stageFilter;
+          const hm = { done: h.items.filter((i) => i.status === 'Completed').length, total: h.items.filter((i) => i.status !== 'NA').length };
+          return (
+            <div key={h.headId} className="bg-paper border border-tint rounded-lg overflow-hidden">
+              <div className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-fog/60">
+                {selecting && h.items.length > 0 && (() => {
+                  const ids = h.items.map((it) => it.id);
+                  const all = ids.every((idx) => sel[idx]);
+                  const some = ids.some((idx) => sel[idx]);
+                  return <input type="checkbox" checked={all} ref={(el) => { if (el) el.indeterminate = !all && some; }} onChange={() => { const n = { ...sel }; ids.forEach((idx) => { n[idx] = !all; }); setSel(n); }} title="Select every task under this heading" className="accent-green shrink-0" />;
+                })()}
+                <button onClick={() => setCollapsed({ ...collapsed, [h.headId]: !isC })} className="flex items-center gap-3 flex-1 text-left">
+                  <span className="text-slate-300 text-xs w-3">{isC ? '▸' : '▾'}</span>
+                  <span className="font-serif font-medium text-ink text-[16px] flex-1">{h.sub}{adhoc && <span className="ml-2 text-xs font-sans font-normal text-slate-400">tasks for this client outside the standard list</span>}</span>
+                  {hm.total > 0 && <span className="w-20 h-1 bg-fog rounded-full overflow-hidden hidden sm:block"><span className="block h-full bg-green rounded-full" style={{ width: (hm.done / hm.total) * 100 + '%' }} /></span>}
+                  <span className="text-xs text-slate-400 tabular-nums w-10 text-right">{hm.total > 0 ? `${hm.done}/${hm.total}` : ''}</span>
+                </button>
+              </div>
+              {!isC && (
+                <div className="divide-y divide-tint/60 border-t border-tint">
+                  {h.items.map((it) => (
+                    <ItemRow
+                      key={it.id} it={it} team={team} canEdit={canEdit} engagementId={id}
+                      selectMode={selecting} selected={!!sel[it.id]} onToggleSel={() => setSel((s) => ({ ...s, [it.id]: !s[it.id] }))}
+                      onChange={(patch) => updateItem(it.id, patch)}
+                      onRemove={canEdit && isAdhoc(it) ? () => { if (confirm(`Delete "${it.p}"? The Activity log keeps a trace.`)) removeItem(it.id); } : null}
+                    />
+                  ))}
+                  {canEdit && (
+                    <AddAdhoc
+                      placeholder={adhoc ? 'Add a task for this client…' : 'Extra document needed under this heading…'}
+                      label={adhoc ? '+ Add task' : '+ Add item'}
+                      onAdd={(p) => api.items.addAdhoc(adhoc
+                        ? { engagementId: id, p, owner: engagement.incharge || '' }
+                        : { engagementId: id, p, headId: h.headId, section: h.section, sub: h.sub, requestable: true }
+                      ).then(load).catch((err) => toast(err.message, 'error'))}
+                    />
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </section>
+
+      {selecting && selItems.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 bg-paper border border-tint rounded-full pl-5 pr-2 py-2 flex items-center gap-3">
+          <span className="text-sm text-ink tabular-nums">{selItems.length} selected</span>
+          <span className="text-xs text-slate-400">Assign to</span>
+          <select value="" aria-label="Assign selected tasks to" onChange={(e) => { if (e.target.value) assignSelected(e.target.value); }} className="text-xs border border-tint rounded-md px-2 py-1 bg-paper focus:outline-none focus:border-green">
+            <option value="">choose…</option>
+            {team.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
+            <option value="__none">nobody</option>
+          </select>
+          <span className="w-px h-5 bg-tint" />
+          <span className="text-xs text-slate-400 tabular-nums" title="What the message will contain">
+            {[preview.fresh.length && `${preview.fresh.length} new`, preview.awaited.length && `${preview.awaited.length} reminder${preview.awaited.length > 1 ? 's' : ''}`, preview.resend.length && `${preview.resend.length} resend`].filter(Boolean).join(' · ') || 'nothing to send'}
+          </span>
+          <Btn size="sm" onClick={openCompose} disabled={messageable === 0} title={messageable ? "Write the message from what's ticked" : 'Nothing ticked can be messaged'}>Message client</Btn>
+        </div>
+      )}
+
+      {scoping && <ScopePanel orderedHeads={libraryHeads} setHeadIncluded={setHeadIncluded} updateItem={updateItem} onClose={() => setScoping(false)} />}
+      {compose && <ComposeModal compose={compose} setCompose={setCompose} phone={phone} onConfirm={confirmSend} />}
+      {filesOpen && (
+        <FilesModal
+          engagementId={id} files={files} heads={includedHeads} onClose={() => setFilesOpen(false)}
+          onAdd={addFiles} onMatch={matchFile} onUnmatch={unmatchFile} onRemove={removeFile} canDelete={canDeleteFiles}
         />
       )}
     </div>

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { pool } from '../db/pool.js';
 import { rbac } from '../middleware/rbac.js';
+import { logEvent } from '../db/events.js';
 
 const router = Router();
 
@@ -35,6 +36,10 @@ router.post('/', rbac('partner'), async (req, res) => {
        RETURNING id, name, username, role, active, created_at`,
       [name, username, hash, role]
     );
+    await logEvent({
+      by: req.user.name, userId: req.user.sub,
+      entity: 'user', entityId: rows[0].id, label: name, type: 'person.added', to: role,
+    });
     res.status(201).json({ user: rows[0] });
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'Username already exists' });
@@ -47,6 +52,10 @@ router.post('/', rbac('partner'), async (req, res) => {
 router.patch('/:id', rbac('partner'), async (req, res) => {
   const { name, role, password } = req.body;
   try {
+    const { rows: beforeRows } = await pool.query('SELECT * FROM users WHERE id = $1', [req.params.id]);
+    const before = beforeRows[0];
+    if (!before) return res.status(404).json({ error: 'User not found' });
+
     const updates = [];
     const values = [];
     let i = 1;
@@ -72,8 +81,21 @@ router.patch('/:id', rbac('partner'), async (req, res) => {
        RETURNING id, name, username, role, active, created_at`,
       values
     );
-    if (!rows[0]) return res.status(404).json({ error: 'User not found' });
-    res.json({ user: rows[0] });
+    const after = rows[0];
+    if (!after) return res.status(404).json({ error: 'User not found' });
+    if (name && after.name !== before.name) {
+      await logEvent({
+        by: req.user.name, userId: req.user.sub,
+        entity: 'user', entityId: after.id, type: 'person.renamed', from: before.name, to: after.name,
+      });
+    }
+    if (role && after.role !== before.role) {
+      await logEvent({
+        by: req.user.name, userId: req.user.sub,
+        entity: 'user', entityId: after.id, label: after.name, type: 'person.role', from: before.role, to: after.role,
+      });
+    }
+    res.json({ user: after });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error' });
@@ -85,10 +107,14 @@ router.delete('/:id', rbac('partner'), async (req, res) => {
   try {
     const { rows } = await pool.query(
       `UPDATE users SET active = false, updated_at = NOW()
-       WHERE id = $1 RETURNING id`,
+       WHERE id = $1 RETURNING id, name`,
       [req.params.id]
     );
     if (!rows[0]) return res.status(404).json({ error: 'User not found' });
+    await logEvent({
+      by: req.user.name, userId: req.user.sub,
+      entity: 'user', entityId: rows[0].id, label: rows[0].name, type: 'person.removed',
+    });
     res.json({ ok: true });
   } catch (err) {
     console.error(err);

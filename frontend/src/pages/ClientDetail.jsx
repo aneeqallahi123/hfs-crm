@@ -7,7 +7,7 @@ import Modal from '../components/Modal.jsx';
 import Btn from '../components/Btn.jsx';
 import Field, { SelectField } from '../components/Field.jsx';
 
-const MODULES = ['audit', 'tax', 'corporate'];
+const MODULES = ['audit', 'tax', 'consulting', 'misc'];
 
 function NewEngagementModal({ client, engagements, onClose, onSaved }) {
   const toast = useToast();

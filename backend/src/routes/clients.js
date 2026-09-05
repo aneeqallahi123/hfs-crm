@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../db/pool.js';
 import { rbac } from '../middleware/rbac.js';
+import { logEvent } from '../db/events.js';
 
 const router = Router();
 
@@ -52,6 +53,10 @@ router.post('/', rbac('partner', 'manager'), async (req, res) => {
        RETURNING *`,
       [module, name, ntn, contactName, phone, isFirm]
     );
+    await logEvent({
+      by: req.user.name, userId: req.user.sub, module, clientId: rows[0].id,
+      entity: 'client', entityId: rows[0].id, label: name, type: 'client.added',
+    });
     res.status(201).json({ client: toClient(rows[0]) });
   } catch (err) {
     console.error(err);
@@ -63,6 +68,10 @@ router.post('/', rbac('partner', 'manager'), async (req, res) => {
 router.patch('/:id', rbac('partner', 'manager'), async (req, res) => {
   const { name, ntn, contactName, phone, module } = req.body;
   try {
+    const { rows: beforeRows } = await pool.query('SELECT * FROM clients WHERE id = $1', [req.params.id]);
+    const before = beforeRows[0];
+    if (!before) return res.status(404).json({ error: 'Client not found' });
+
     const updates = [];
     const values = [];
     let i = 1;
@@ -81,8 +90,15 @@ router.patch('/:id', rbac('partner', 'manager'), async (req, res) => {
       `UPDATE clients SET ${updates.join(', ')} WHERE id = $${i} RETURNING *`,
       values
     );
-    if (!rows[0]) return res.status(404).json({ error: 'Client not found' });
-    res.json({ client: toClient(rows[0]) });
+    const after = rows[0];
+    if (!after) return res.status(404).json({ error: 'Client not found' });
+    if (name !== undefined && after.name !== before.name) {
+      await logEvent({
+        by: req.user.name, userId: req.user.sub, module: after.module, clientId: after.id,
+        entity: 'client', entityId: after.id, type: 'client.renamed', from: before.name, to: after.name,
+      });
+    }
+    res.json({ client: toClient(after) });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error' });
@@ -92,11 +108,19 @@ router.patch('/:id', rbac('partner', 'manager'), async (req, res) => {
 // DELETE /api/clients/:id
 router.delete('/:id', rbac('partner', 'manager'), async (req, res) => {
   try {
+    const { rows: beforeRows } = await pool.query('SELECT * FROM clients WHERE id = $1', [req.params.id]);
+    const before = beforeRows[0];
     const { rows } = await pool.query(
       'DELETE FROM clients WHERE id = $1 RETURNING id',
       [req.params.id]
     );
     if (!rows[0]) return res.status(404).json({ error: 'Client not found' });
+    if (before) {
+      await logEvent({
+        by: req.user.name, userId: req.user.sub, module: before.module,
+        entity: 'client', entityId: before.id, label: before.name, type: 'client.removed',
+      });
+    }
     res.json({ ok: true });
   } catch (err) {
     console.error(err);

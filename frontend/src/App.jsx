@@ -9,6 +9,8 @@ import Clients from './pages/Clients.jsx';
 import ClientDetail from './pages/ClientDetail.jsx';
 import EngagementDetail from './pages/EngagementDetail.jsx';
 import Team from './pages/Team.jsx';
+import Person from './pages/Person.jsx';
+import Tasks from './pages/Tasks.jsx';
 import Events from './pages/Events.jsx';
 import Library from './pages/Library.jsx';
 
@@ -43,6 +45,7 @@ function AppRoutes() {
         }
       >
         <Route index element={<Dashboard />} />
+        <Route path="tasks" element={<Tasks />} />
         <Route path="clients" element={<Clients />} />
         <Route path="clients/:id" element={<ClientDetail />} />
         <Route path="engagements/:id" element={<EngagementDetail />} />
@@ -51,6 +54,14 @@ function AppRoutes() {
           element={
             <RequireRole roles={['partner']}>
               <Team />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="team/:name"
+          element={
+            <RequireRole roles={['partner']}>
+              <Person />
             </RequireRole>
           }
         />
