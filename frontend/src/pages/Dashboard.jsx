@@ -28,11 +28,11 @@ export default function Dashboard() {
     Promise.all([
       api.clients.list(),
       api.engagements.list(),
-      api.inbox.list(),
+      api.inbox.list().catch(() => []),
     ]).then(([c, e, inbox]) => {
-      setClients(c);
-      setEngagements(e);
-      setInboxCount(inbox.filter(f => !f.assignedItemId).length);
+      setClients(Array.isArray(c) ? c : []);
+      setEngagements(Array.isArray(e) ? e : []);
+      setInboxCount(Array.isArray(inbox) ? inbox.filter(f => !f.assignedItemId).length : 0);
     }).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
