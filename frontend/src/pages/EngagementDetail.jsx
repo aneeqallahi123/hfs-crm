@@ -116,7 +116,7 @@ function InboxTab({ engagementId, items }) {
   const toast = useToast();
 
   useEffect(() => {
-    api.inbox.list(engagementId).then(setFiles).catch(() => {}).finally(() => setLoading(false));
+    api.inbox.list(engagementId).then(r => setFiles(Array.isArray(r) ? r : [])).catch(() => {}).finally(() => setLoading(false));
   }, [engagementId]);
 
   async function assign(fileId, itemId) {
@@ -129,7 +129,7 @@ function InboxTab({ engagementId, items }) {
         toast('File unassigned', 'success');
       }
       const updated = await api.inbox.list(engagementId);
-      setFiles(updated);
+      setFiles(Array.isArray(updated) ? updated : []);
     } catch (err) {
       toast(err.message, 'error');
     }

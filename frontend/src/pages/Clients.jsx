@@ -79,7 +79,7 @@ export default function Clients() {
   async function load() {
     try {
       const data = await api.clients.list();
-      setClients(data);
+      setClients(Array.isArray(data) ? data : []);
     } catch {} finally {
       setLoading(false);
     }

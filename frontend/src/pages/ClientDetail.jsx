@@ -81,7 +81,7 @@ export default function ClientDetail() {
         api.engagements.list(id),
       ]);
       setClient(c);
-      setEngagements(engs.sort((a, b) => b.year - a.year));
+      setEngagements(Array.isArray(engs) ? engs.sort((a, b) => b.year - a.year) : []);
     } catch (err) {
       toast(err.message, 'error');
     } finally {

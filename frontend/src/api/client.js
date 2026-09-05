@@ -51,10 +51,10 @@ export const api = {
     me: () => request('GET', '/auth/me'),
   },
   clients: {
-    list: (module) => request('GET', `/clients${module ? `?module=${module}` : ''}`),
-    get: (id) => request('GET', `/clients/${id}`),
-    create: (data) => request('POST', '/clients', data),
-    update: (id, data) => request('PATCH', `/clients/${id}`, data),
+    list: (module) => request('GET', `/clients${module ? `?module=${module}` : ''}`).then(r => r?.clients ?? r),
+    get: (id) => request('GET', `/clients/${id}`).then(r => r?.client ?? r),
+    create: (data) => request('POST', '/clients', data).then(r => r?.client ?? r),
+    update: (id, data) => request('PATCH', `/clients/${id}`, data).then(r => r?.client ?? r),
     delete: (id) => request('DELETE', `/clients/${id}`),
   },
   engagements: {
@@ -62,23 +62,23 @@ export const api = {
       const params = new URLSearchParams();
       if (clientId) params.set('clientId', clientId);
       if (module) params.set('module', module);
-      return request('GET', `/engagements?${params}`);
+      return request('GET', `/engagements?${params}`).then(r => r?.engagements ?? r);
     },
-    get: (id) => request('GET', `/engagements/${id}`),
-    create: (data) => request('POST', '/engagements', data),
-    update: (id, data) => request('PATCH', `/engagements/${id}`, data),
+    get: (id) => request('GET', `/engagements/${id}`).then(r => r?.engagement ?? r),
+    create: (data) => request('POST', '/engagements', data).then(r => r?.engagement ?? r),
+    update: (id, data) => request('PATCH', `/engagements/${id}`, data).then(r => r?.engagement ?? r),
     delete: (id) => request('DELETE', `/engagements/${id}`),
-    rollForward: (id) => request('POST', `/engagements/${id}/roll-forward`),
+    rollForward: (id) => request('POST', `/engagements/${id}/roll-forward`).then(r => r?.engagement ?? r),
   },
   items: {
-    list: (engagementId) => request('GET', `/items?engagementId=${engagementId}`),
-    update: (id, data) => request('PATCH', `/items/${id}`, data),
+    list: (engagementId) => request('GET', `/items?engagementId=${engagementId}`).then(r => r?.items ?? r),
+    update: (id, data) => request('PATCH', `/items/${id}`, data).then(r => r?.item ?? r),
     bulkUpdate: (updates) => request('PATCH', '/items/bulk', { updates }),
-    addAdhoc: (data) => request('POST', '/items/adhoc', data),
+    addAdhoc: (data) => request('POST', '/items/adhoc', data).then(r => r?.item ?? r),
     delete: (id) => request('DELETE', `/items/${id}`),
   },
   inbox: {
-    list: (engagementId) => request('GET', engagementId ? `/inbox?engagementId=${engagementId}` : '/inbox'),
+    list: (engagementId) => request('GET', engagementId ? `/inbox?engagementId=${engagementId}` : '/inbox').then(r => r?.files ?? r),
     assign: (fileId, itemId) => request('PATCH', `/inbox/${fileId}/assign`, { itemId }),
     unassign: (fileId) => request('PATCH', `/inbox/${fileId}/assign`, { itemId: null }),
   },
@@ -93,9 +93,9 @@ export const api = {
     delete: (fileId) => request('DELETE', `/documents/${fileId}`),
   },
   team: {
-    list: () => request('GET', '/team'),
-    create: (data) => request('POST', '/team', data),
-    update: (id, data) => request('PATCH', `/team/${id}`, data),
+    list: () => request('GET', '/team').then(r => r?.team ?? r),
+    create: (data) => request('POST', '/team', data).then(r => r?.user ?? r),
+    update: (id, data) => request('PATCH', `/team/${id}`, data).then(r => r?.user ?? r),
     deactivate: (id) => request('DELETE', `/team/${id}`),
   },
   events: {
