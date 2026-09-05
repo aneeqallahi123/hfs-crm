@@ -85,7 +85,7 @@ export default function Sidebar() {
           <span className="text-[11px] text-paper/55">Clients</span>
           {!isStudent && (
             <button
-              onClick={() => navigate('/clients/new')}
+              onClick={() => navigate('/clients')}
               className="h-6 px-2 rounded-md text-[11px] text-paper/80 bg-paper/10 hover:bg-paper/20"
             >Add</button>
           )}

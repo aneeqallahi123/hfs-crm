@@ -14,10 +14,8 @@ function ClientModal({ client, onClose, onSaved }) {
   const [f, setF] = useState({
     name: client?.name || '',
     ntn: client?.ntn || '',
-    address: client?.address || '',
-    contactPerson: client?.contactPerson || '',
-    contactEmail: client?.contactEmail || '',
-    contactPhone: client?.contactPhone || '',
+    contactName: client?.contactName || '',
+    phone: client?.phone || '',
     module: client?.module || 'audit',
   });
   const [saving, setSaving] = useState(false);
@@ -47,10 +45,8 @@ function ClientModal({ client, onClose, onSaved }) {
     <Modal title={client ? 'Edit client' : 'Add client'} onClose={onClose}>
       <Field label="Client name" value={f.name} onChange={up('name')} placeholder="Ehsan Chappal Store (Pvt) Ltd" required />
       <Field label="NTN" value={f.ntn} onChange={up('ntn')} placeholder="1234567-8" />
-      <Field label="Address" value={f.address} onChange={up('address')} placeholder="Karachi" />
-      <Field label="Contact person" value={f.contactPerson} onChange={up('contactPerson')} placeholder="Mr. Bilal" />
-      <Field label="Contact email" value={f.contactEmail} onChange={up('contactEmail')} placeholder="bilal@example.com" />
-      <Field label="Contact phone" value={f.contactPhone} onChange={up('contactPhone')} placeholder="0300 1234567" />
+      <Field label="Contact name" value={f.contactName} onChange={up('contactName')} placeholder="Mr. Bilal" />
+      <Field label="Phone" value={f.phone} onChange={up('phone')} placeholder="0300 1234567" />
       <SelectField label="Module" value={f.module} onChange={up('module')}>
         {MODULES.map(m => <option key={m} value={m}>{m.charAt(0).toUpperCase() + m.slice(1)}</option>)}
       </SelectField>
@@ -153,8 +149,8 @@ export default function Clients() {
                   >{c.name}</td>
                   <td className="px-4 py-3 font-mono text-[13px] text-slate-500">{c.ntn || '—'}</td>
                   <td className="px-4 py-3 text-slate-600 text-[13px]">
-                    {c.contactPerson || '—'}
-                    {c.contactPhone && <span className="text-slate-400"> · {c.contactPhone}</span>}
+                    {c.contactName || '—'}
+                    {c.phone && <span className="text-slate-400"> · {c.phone}</span>}
                   </td>
                   <td className="px-4 py-3 capitalize text-[13px] text-slate-500">{c.module || 'audit'}</td>
                   {canEdit && (

@@ -21,39 +21,34 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [clients, setClients] = useState([]);
   const [engagements, setEngagements] = useState([]);
-  const [inboxCount, setInboxCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([
       api.clients.list(),
       api.engagements.list(),
-      api.inbox.list().catch(() => []),
-    ]).then(([c, e, inbox]) => {
+    ]).then(([c, e]) => {
       setClients(Array.isArray(c) ? c : []);
       setEngagements(Array.isArray(e) ? e : []);
-      setInboxCount(Array.isArray(inbox) ? inbox.filter(f => !f.assignedItemId).length : 0);
     }).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
   const today = new Date().toISOString().split('T')[0];
-  const openEngagements = engagements.filter(e => e.status !== 'Completed');
-  const overdueEngagements = engagements.filter(e => e.dueDate && e.dueDate < today && e.status !== 'Completed');
+  const overdueEngagements = engagements.filter(e => e.deadline && e.deadline < today);
 
   const recentEngagements = [...engagements]
     .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
     .slice(0, 8);
 
-  function statusColor(e) {
-    if (e.status === 'Completed') return 'text-green';
-    if (e.dueDate && e.dueDate < today) return 'text-deep font-medium';
-    return 'text-slate-500';
+  function deadlineLabel(e) {
+    if (!e.deadline) return '—';
+    if (e.deadline < today) return `Overdue (${e.deadline})`;
+    return e.deadline;
   }
 
-  function statusLabel(e) {
-    if (e.status === 'Completed') return 'Complete';
-    if (e.dueDate && e.dueDate < today) return 'Overdue';
-    return e.status || 'In progress';
+  function deadlineColor(e) {
+    if (e.deadline && e.deadline < today) return 'text-deep font-medium';
+    return 'text-slate-500';
   }
 
   return (
@@ -70,7 +65,7 @@ export default function Dashboard() {
         <div className="text-sm text-slate-400">Loading…</div>
       ) : (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-10">
             <StatCard
               label="Clients"
               value={clients.length}
@@ -78,8 +73,8 @@ export default function Dashboard() {
               onClick={() => navigate('/clients')}
             />
             <StatCard
-              label="Open engagements"
-              value={openEngagements.length}
+              label="Engagements"
+              value={engagements.length}
               sub="active"
               onClick={() => navigate('/clients')}
             />
@@ -87,11 +82,6 @@ export default function Dashboard() {
               label="Overdue"
               value={overdueEngagements.length}
               sub={overdueEngagements.length > 0 ? 'past deadline' : 'none overdue'}
-            />
-            <StatCard
-              label="Inbox unassigned"
-              value={inboxCount}
-              sub="waiting to assign"
             />
           </div>
 
@@ -105,14 +95,14 @@ export default function Dashboard() {
                   <thead>
                     <tr className="border-b border-tint bg-fog">
                       <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500">Client</th>
-                      <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500">Engagement</th>
                       <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500">Year</th>
+                      <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500">Module</th>
                       <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500">In-charge</th>
-                      <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500">Status</th>
+                      <th className="text-left px-4 py-2.5 text-xs font-medium text-slate-500">Deadline</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {recentEngagements.map((e, i) => {
+                    {recentEngagements.map(e => {
                       const client = clients.find(c => c.id === e.clientId);
                       return (
                         <tr
@@ -123,10 +113,10 @@ export default function Dashboard() {
                           <td className="px-4 py-3 text-sm font-medium text-ink truncate max-w-[160px]">
                             {client?.name || '—'}
                           </td>
-                          <td className="px-4 py-3 text-sm text-slate-600 truncate max-w-[180px]">{e.title}</td>
                           <td className="px-4 py-3 text-sm font-mono text-slate-600">FY {e.year}</td>
+                          <td className="px-4 py-3 text-sm capitalize text-slate-500">{e.module}</td>
                           <td className="px-4 py-3 text-sm text-slate-600">{e.incharge || '—'}</td>
-                          <td className={`px-4 py-3 text-xs ${statusColor(e)}`}>{statusLabel(e)}</td>
+                          <td className={`px-4 py-3 text-xs ${deadlineColor(e)}`}>{deadlineLabel(e)}</td>
                         </tr>
                       );
                     })}
