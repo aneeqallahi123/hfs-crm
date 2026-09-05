@@ -56,12 +56,12 @@ export default function Clients() {
   async function add() {
     if (!validate()) return;
     try {
-      await api.clients.create({ ...f, name: f.name.trim() });
+      const newClient = await api.clients.create({ ...f, name: f.name.trim() });
       toast(`${f.name.trim()} added`, 'success');
       setF(EMPTY);
       setErrors({});
       setAdding(false);
-      load();
+      navigate(`/clients/${newClient.id}`, { state: { openLibrary: true } });
     } catch (err) {
       toast(err.message, 'error');
     }

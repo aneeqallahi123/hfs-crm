@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
@@ -63,6 +63,7 @@ export default function ClientDetail() {
   const { id } = useParams();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const toast = useToast();
   const [client, setClient] = useState(null);
   const [engagements, setEngagements] = useState([]);
@@ -161,6 +162,7 @@ export default function ClientDetail() {
           clientId={client.id}
           module={client.module || 'audit'}
           canEdit={canEdit}
+          initialOpen={!!location.state?.openLibrary}
         />
       </div>
 

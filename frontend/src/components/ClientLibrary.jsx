@@ -351,9 +351,9 @@ function AddCustomHead({ section, onAdd }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function ClientLibrary({ clientId, module = 'audit', canEdit }) {
+export default function ClientLibrary({ clientId, module = 'audit', canEdit, initialOpen = false }) {
   const toast = useToast();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initialOpen);
   const [loading, setLoading] = useState(false);
   const [library, setLibrary] = useState([]);
   const [years, setYears] = useState([]);
