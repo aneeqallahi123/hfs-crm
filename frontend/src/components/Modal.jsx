@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 
 export default function Modal({ title, children, onClose, wide }) {
   const onCloseRef = useRef(onClose);
@@ -10,7 +11,7 @@ export default function Modal({ title, children, onClose, wide }) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-40 bg-ink/40 flex items-start justify-center overflow-y-auto p-6"
       onClick={onClose}
@@ -31,6 +32,7 @@ export default function Modal({ title, children, onClose, wide }) {
         </div>
         <div className="px-6 py-5">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
