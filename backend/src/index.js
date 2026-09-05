@@ -16,7 +16,7 @@ import webhookRoutes from './routes/webhooks.js';
 import eventRoutes from './routes/events.js';
 import { verifyToken } from './middleware/auth.js';
 import { ensureBucket } from './storage/minio.js';
-import { runMigrations } from './db/migrate.js';
+import { runMigrations, runAdminPasswordFix } from './db/migrate.js';
 
 const app = express();
 
@@ -50,6 +50,7 @@ app.get('/health', (_, res) => res.json({ ok: true }));
 const PORT = process.env.PORT || 3000;
 
 runMigrations()
+  .then(() => runAdminPasswordFix())
   .then(() => ensureBucket().catch(err => {
     console.warn('MinIO bucket check failed (non-fatal):', err.message);
   }))
