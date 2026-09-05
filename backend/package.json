@@ -1,0 +1,30 @@
+{
+  "name": "hfc-crm-backend",
+  "version": "1.0.0",
+  "description": "HFC CRM API server",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "lint": "node --check src/index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.0",
+    "pg": "^8.11.0",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.0",
+    "minio": "^7.1.0",
+    "cors": "^2.8.5",
+    "helmet": "^7.0.0",
+    "express-rate-limit": "^7.0.0",
+    "multer": "^1.4.5-lts.1",
+    "dotenv": "^16.0.0",
+    "uuid": "^9.0.0",
+    "cookie-parser": "^1.4.6",
+    "node-fetch": "^3.3.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.0"
+  }
+}
