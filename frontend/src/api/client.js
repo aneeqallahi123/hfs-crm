@@ -30,7 +30,7 @@ async function request(method, path, body) {
   return res.json();
 }
 
-async function refreshToken() {
+export async function refreshToken() {
   try {
     const data = await fetch(`${import.meta.env.VITE_API_URL}/auth/refresh`, {
       method: 'POST',
