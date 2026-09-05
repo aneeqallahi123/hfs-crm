@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { api, setAccessToken, refreshToken } from '../api/client.js';
+import { api, setAccessToken } from '../api/client.js';
 
 const AuthContext = createContext(null);
 
@@ -8,16 +8,11 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function restoreSession() {
-      try {
-        // Access token is in-memory only; refresh via cookie first, then fetch user
-        await refreshToken();
-        const { user } = await api.auth.me();
-        setUser(user);
-      } catch {}
-      setLoading(false);
-    }
-    restoreSession();
+    // Token is persisted in localStorage; /auth/me validates it is still good
+    api.auth.me()
+      .then(({ user }) => setUser(user))
+      .catch(() => setAccessToken(null)) // token invalid/expired — clear it
+      .finally(() => setLoading(false));
   }, []);
 
   async function login(username, password) {
