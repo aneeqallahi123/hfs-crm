@@ -50,6 +50,12 @@ export async function runMigrations() {
     )
   `);
 
+  // Add task_type column if missing
+  await pool.query(`
+    ALTER TABLE library_items
+    ADD COLUMN IF NOT EXISTS task_type TEXT NOT NULL DEFAULT 'document'
+  `);
+
   // Seed audit library if empty
   const { rows: existing } = await pool.query(
     `SELECT COUNT(*) AS cnt FROM library_heads WHERE module = 'audit'`
