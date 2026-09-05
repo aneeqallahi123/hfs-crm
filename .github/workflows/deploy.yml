@@ -17,7 +17,7 @@ jobs:
       - run: cd backend && npm install
       - run: cd backend && npm run lint --if-present
 
-  lint-frontend:
+  deploy-frontend:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,3 +26,11 @@ jobs:
           node-version: '20'
       - run: cd frontend && npm install
       - run: cd frontend && npm run build
+        env:
+          VITE_API_URL: https://backend-production-fd304.up.railway.app/api
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy frontend/dist --project-name hfc-crm --branch main
