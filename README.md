@@ -201,7 +201,7 @@ Item status values: `No progress` | `In progress` | `Completed` | `N/A`
 - Exposed via Cloudflare Tunnel (currently temporary `trycloudflare.com` URL — dies on reboot)
 - **Permanent tunnel pending** — requires buying a domain (e.g. `hfc-smart-audit.com`)
 - Bucket: `hfc-documents` (auto-created on backend startup)
-- Credentials: `hfc_admin` / `HFc.@%123789`
+- Credentials: `hfc_admin` / (password set during setup — stored in Docker Compose on mini PC)
 
 See `MINIO_SETUP_CONTEXT.md` for full setup details.
 

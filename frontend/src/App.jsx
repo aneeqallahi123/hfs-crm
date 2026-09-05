@@ -1,60 +1,80 @@
-import React, { useState, useEffect } from 'react';
-import { api, setAccessToken } from './api/client.js';
+import React from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './context/AuthContext.jsx';
+import { ToastProvider } from './context/ToastContext.jsx';
+import Layout from './components/Layout.jsx';
+import Login from './pages/Login.jsx';
+import Dashboard from './pages/Dashboard.jsx';
+import Clients from './pages/Clients.jsx';
+import ClientDetail from './pages/ClientDetail.jsx';
+import EngagementDetail from './pages/EngagementDetail.jsx';
+import Team from './pages/Team.jsx';
+import Events from './pages/Events.jsx';
+
+function RequireAuth({ children }) {
+  const { user, loading } = useAuth();
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center bg-fog">
+      <div className="text-sm text-slate-400">Loading…</div>
+    </div>
+  );
+  if (!user) return <Navigate to="/login" replace />;
+  return children;
+}
+
+function RequireRole({ roles, children }) {
+  const { user } = useAuth();
+  if (!roles.includes(user?.role)) return <Navigate to="/" replace />;
+  return children;
+}
+
+function AppRoutes() {
+  const { user } = useAuth();
+  return (
+    <Routes>
+      <Route path="/login" element={<Login />} />
+      <Route
+        path="/"
+        element={
+          <RequireAuth>
+            <Layout />
+          </RequireAuth>
+        }
+      >
+        <Route index element={<Dashboard />} />
+        <Route path="clients" element={<Clients />} />
+        <Route path="clients/:id" element={<ClientDetail />} />
+        <Route path="engagements/:id" element={<EngagementDetail />} />
+        <Route
+          path="team"
+          element={
+            <RequireRole roles={['partner']}>
+              <Team />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="events"
+          element={
+            <RequireRole roles={['partner', 'manager']}>
+              <Events />
+            </RequireRole>
+          }
+        />
+      </Route>
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
 
 export default function App() {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    // Attempt silent refresh on mount
-    api.auth.me()
-      .then(({ user }) => setUser(user))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
-
-  async function handleLogin(e) {
-    e.preventDefault();
-    const { username, password } = Object.fromEntries(new FormData(e.target));
-    try {
-      const { user, accessToken } = await api.auth.login(username, password);
-      setAccessToken(accessToken);
-      setUser(user);
-    } catch (err) {
-      alert(err.message);
-    }
-  }
-
-  async function handleLogout() {
-    await api.auth.logout();
-    setAccessToken(null);
-    setUser(null);
-  }
-
-  if (loading) return <div style={{ padding: 40, fontFamily: 'sans-serif' }}>Loading…</div>;
-
-  if (!user) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', fontFamily: 'sans-serif' }}>
-        <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 12, width: 280 }}>
-          <h2 style={{ margin: 0 }}>HFC CRM</h2>
-          <input name="username" placeholder="Username" required style={{ padding: 8, fontSize: 14 }} />
-          <input name="password" type="password" placeholder="Password" required style={{ padding: 8, fontSize: 14 }} />
-          <button type="submit" style={{ padding: '8px 16px', fontSize: 14 }}>Sign in</button>
-        </form>
-      </div>
-    );
-  }
-
   return (
-    <div style={{ padding: 40, fontFamily: 'sans-serif' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <h2 style={{ margin: 0 }}>HFC CRM — {user.name} ({user.role})</h2>
-        <button onClick={handleLogout}>Sign out</button>
-      </div>
-      <p style={{ color: '#666' }}>
-        Backend connected. Frontend component migration from the existing HTML file happens next.
-      </p>
-    </div>
+    <BrowserRouter>
+      <AuthProvider>
+        <ToastProvider>
+          <AppRoutes />
+        </ToastProvider>
+      </AuthProvider>
+    </BrowserRouter>
   );
 }
