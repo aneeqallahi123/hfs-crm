@@ -229,10 +229,32 @@ Railway does **not** auto-deploy on push (GitHub webhook not set up for the Rail
 
 ---
 
+## Frontend Pages (all live at hfc-crm.pages.dev)
+
+| Page | Path | Access |
+|------|------|--------|
+| Login | `/login` | Public |
+| Dashboard | `/` | All roles |
+| Clients | `/clients` | All roles |
+| Client Detail + Engagements | `/clients/:id` | All roles |
+| Engagement Detail (checklist, inbox, docs) | `/engagements/:id` | All roles |
+| Team Management | `/team` | Partner only |
+| Events / Audit Log | `/events` | Partner + Manager |
+
+## Rate Limits
+
+| Endpoint group | Limit |
+|---------------|-------|
+| `/auth/login`, `/auth/logout` | 100 requests / 15 min |
+| `/auth/me`, `/auth/refresh` | 300 requests / min |
+| All other `/api/*` | 300 requests / min |
+
+---
+
 ## Pending / Next Steps
 
-- [ ] **Permanent Cloudflare Tunnel** for MinIO — buy domain, set up named tunnel + launchd service
-- [ ] **n8n setup** on local mini PC — connects Evolution API → backend webhooks
-- [ ] **Evolution API setup** on local mini PC — WhatsApp Business API
-- [ ] **Frontend completion** — pages are scaffolded, implementation ongoing
-- [ ] **Set up Railway auto-deploy** — add GitHub webhook for `hfc202612` Railway account
+- [ ] **Permanent Cloudflare Tunnel** for MinIO — buy domain (e.g. `hfc-smart-audit.com`), set up named tunnel + launchd service so it survives reboots
+- [ ] **n8n setup** on local mini PC — workflow automation connecting Evolution API → backend webhooks
+- [ ] **Evolution API setup** on local mini PC — WhatsApp Business API for document intake
+- [x] **Frontend** — all pages built and deployed
+- [ ] **Set up Railway auto-deploy** — add GitHub webhook for `hfc202612` Railway account (currently triggered manually via MCP)
