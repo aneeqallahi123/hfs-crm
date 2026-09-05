@@ -101,4 +101,8 @@ export const api = {
   events: {
     list: (params) => request('GET', `/events?${new URLSearchParams(params)}`),
   },
+  library: {
+    get: (module = 'audit') => request('GET', `/library?module=${module}`).then(r => r?.library ?? r),
+    save: (module, library) => request('PUT', `/library/${module}`, { library }),
+  },
 };

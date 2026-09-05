@@ -7,12 +7,23 @@ import Btn from '../components/Btn.jsx';
 import Modal from '../components/Modal.jsx';
 import Field from '../components/Field.jsx';
 
-const STATUSES = ['No progress', 'In progress', 'Completed', 'N/A'];
+// DB statuses — must match CHECK constraint exactly
+const STATUSES = ['No progress', 'Requested', 'Under Review', 'Completed', 'NA'];
+
+// Display labels for status pills/dropdowns
+const STATUS_LABEL = {
+  'No progress': 'Not started',
+  'Requested': 'Awaited',
+  'Under Review': 'To review',
+  'Completed': 'Complete',
+  'NA': 'N/A',
+};
 
 function statusStyle(s) {
   if (s === 'Completed') return 'bg-fog text-green border-green/40';
-  if (s === 'In progress') return 'bg-amber-50 text-amber-700 border-amber-200';
-  if (s === 'N/A') return 'bg-fog text-slate-400 border-tint';
+  if (s === 'Requested') return 'bg-amber-50 text-amber-700 border-amber-200';
+  if (s === 'Under Review') return 'bg-blue-50 text-blue-700 border-blue-200';
+  if (s === 'NA') return 'bg-fog text-slate-400 border-tint';
   return 'bg-paper text-slate-400 border-tint';
 }
 
@@ -21,6 +32,114 @@ function kindDot(kind) {
   if (kind === 'confirmation') return 'bg-purple-400';
   if (kind === 'procedure') return 'bg-tint';
   return 'bg-slate-300';
+}
+
+// ---- Scope Panel Modal ----
+function ScopeModal({ items, onClose, onSaved }) {
+  const toast = useToast();
+  const [saving, setSaving] = useState(false);
+
+  // Build heads map: headId -> { sub, section, included, items[] }
+  const headsMap = {};
+  for (const it of items) {
+    if (!it.headId) continue;
+    if (!headsMap[it.headId]) {
+      headsMap[it.headId] = {
+        headId: it.headId,
+        sub: it.sub || it.headId,
+        section: it.section || '?',
+        included: it.headIncluded !== false,
+        items: [],
+      };
+    }
+    headsMap[it.headId].items.push(it);
+    // If any item is included, mark head included
+    if (it.headIncluded) headsMap[it.headId].included = true;
+  }
+
+  const SECTION_NAMES = {
+    A: 'A · Permanent File',
+    B: 'B · Planning File',
+    C: 'C · General Procedures',
+    D: 'D · Head-Wise Audit',
+  };
+
+  const [state, setState] = useState(headsMap);
+
+  function toggle(headId) {
+    setState(prev => ({
+      ...prev,
+      [headId]: { ...prev[headId], included: !prev[headId].included },
+    }));
+  }
+
+  async function apply() {
+    setSaving(true);
+    try {
+      const updates = [];
+      for (const [headId, head] of Object.entries(state)) {
+        for (const it of head.items) {
+          const current = items.find(i => i.id === it.id);
+          if (current && current.headIncluded !== head.included) {
+            updates.push({ id: it.id, headIncluded: head.included });
+          }
+        }
+      }
+      if (updates.length) {
+        await api.items.bulkUpdate(updates);
+      }
+      toast('Scope updated', 'success');
+      onSaved();
+      onClose();
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const sections = ['A', 'B', 'C', 'D'];
+  const bySection = sections.reduce((acc, s) => {
+    acc[s] = Object.values(state).filter(h => h.section === s);
+    return acc;
+  }, {});
+
+  return (
+    <Modal title="Engagement scope" onClose={onClose} wide>
+      <p className="text-xs text-slate-500 mb-4">Toggle which library sections apply to this engagement. Excluded heads are hidden from the checklist.</p>
+      <div className="space-y-5 max-h-[60vh] overflow-y-auto pr-1">
+        {sections.map(section => {
+          const heads = bySection[section];
+          if (!heads.length) return null;
+          return (
+            <div key={section}>
+              <h3 className="text-xs font-medium text-slate-500 uppercase tracking-wide mb-2">
+                {SECTION_NAMES[section]}
+              </h3>
+              <div className="space-y-1">
+                {heads.map(head => (
+                  <label key={head.headId} className="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-fog cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={head.included}
+                      onChange={() => toggle(head.headId)}
+                      className="accent-green"
+                    />
+                    <span className="text-sm text-ink">{head.sub}</span>
+                    <span className="ml-auto text-xs text-slate-400">{head.items.length} items</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex justify-end gap-2 pt-4 border-t border-tint mt-4">
+        <Btn kind="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn onClick={apply} disabled={saving}>{saving ? 'Applying…' : 'Apply'}</Btn>
+      </div>
+    </Modal>
+  );
 }
 
 // ---- Item row ----
@@ -144,10 +263,12 @@ function ItemRow({ item, onUpdate, canEdit, teamMembers }) {
               className={`text-[11px] rounded-full border pl-2.5 pr-6 py-0.5 focus:outline-none cursor-pointer appearance-none ${statusStyle(draft.status)}`}
               style={{ backgroundImage: "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%231C1C1C' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>\")", backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center' }}
             >
-              {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+              {STATUSES.map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
             </select>
           ) : (
-            <span className={`text-[11px] rounded-full border px-2.5 py-0.5 ${statusStyle(draft.status)}`}>{draft.status}</span>
+            <span className={`text-[11px] rounded-full border px-2.5 py-0.5 ${statusStyle(draft.status)}`}>
+              {STATUS_LABEL[draft.status] || draft.status}
+            </span>
           )}
         </div>
 
@@ -330,19 +451,18 @@ function DocumentsTab({ engagementId }) {
 
 // ---- Stage count bar ----
 function StageBar({ items, activeFilter, onFilter }) {
-  const counts = {
-    'No progress': items.filter(i => i.status === 'No progress').length,
-    'In progress': items.filter(i => i.status === 'In progress').length,
-    'Completed': items.filter(i => i.status === 'Completed').length,
-    'N/A': items.filter(i => i.status === 'N/A').length,
-  };
+  const counts = STATUSES.reduce((acc, s) => {
+    acc[s] = items.filter(i => i.status === s).length;
+    return acc;
+  }, {});
 
-  const pills = [
-    { label: 'No progress', color: 'bg-slate-100 text-slate-500 border-slate-200' },
-    { label: 'In progress', color: 'bg-amber-50 text-amber-700 border-amber-200' },
-    { label: 'Completed', color: 'bg-fog text-green border-green/30' },
-    { label: 'N/A', color: 'bg-fog text-slate-400 border-tint' },
-  ];
+  const pillColors = {
+    'No progress': 'bg-slate-100 text-slate-500 border-slate-200',
+    'Requested': 'bg-amber-50 text-amber-700 border-amber-200',
+    'Under Review': 'bg-blue-50 text-blue-700 border-blue-200',
+    'Completed': 'bg-fog text-green border-green/30',
+    'NA': 'bg-fog text-slate-400 border-tint',
+  };
 
   return (
     <div className="flex flex-wrap gap-2 mb-4">
@@ -352,13 +472,13 @@ function StageBar({ items, activeFilter, onFilter }) {
       >
         All ({items.length})
       </button>
-      {pills.map(({ label, color }) => (
+      {STATUSES.map(s => (
         <button
-          key={label}
-          onClick={() => onFilter(activeFilter === label ? null : label)}
-          className={`text-xs px-3 py-1 rounded-full border transition-all ${activeFilter === label ? 'ring-2 ring-green ring-offset-1' : ''} ${color}`}
+          key={s}
+          onClick={() => onFilter(activeFilter === s ? null : s)}
+          className={`text-xs px-3 py-1 rounded-full border transition-all ${activeFilter === s ? 'ring-2 ring-green ring-offset-1' : ''} ${pillColors[s]}`}
         >
-          {label} ({counts[label]})
+          {STATUS_LABEL[s]} ({counts[s]})
         </button>
       ))}
     </div>
@@ -378,6 +498,7 @@ export default function EngagementDetail() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('checklist');
   const [showAdhoc, setShowAdhoc] = useState(false);
+  const [showScope, setShowScope] = useState(false);
   const [adhocDesc, setAdhocDesc] = useState('');
   const [statusFilter, setStatusFilter] = useState(null);
 
@@ -412,7 +533,7 @@ export default function EngagementDetail() {
   }, [user]);
 
   async function updateItem(itemId, data) {
-    const updated = await api.items.update(itemId, data);
+    await api.items.update(itemId, data);
     setItems(prev => prev.map(it => it.id === itemId ? { ...it, ...data } : it));
   }
 
@@ -445,12 +566,16 @@ export default function EngagementDetail() {
 
   const today = new Date().toISOString().split('T')[0];
   const isOverdue = engagement.deadline && engagement.deadline < today;
-  const total = items.length;
-  const done = items.filter(it => it.status === 'Completed').length;
+
+  // Only show items where headIncluded is not explicitly false
+  const scopedItems = items.filter(it => it.headIncluded !== false);
+
+  const total = scopedItems.length;
+  const done = scopedItems.filter(it => it.status === 'Completed').length;
   const pct = total ? Math.round((done / total) * 100) : 0;
 
-  // Filter items by status if active
-  const visibleItems = statusFilter ? items.filter(it => it.status === statusFilter) : items;
+  // Filter by status if active
+  const visibleItems = statusFilter ? scopedItems.filter(it => it.status === statusFilter) : scopedItems;
 
   // Group by headId then sub
   const grouped = {};
@@ -521,6 +646,7 @@ export default function EngagementDetail() {
         {isPartnerManager && (
           <div className="mt-4 flex gap-2">
             <Btn size="sm" kind="ghost" onClick={() => setShowAdhoc(true)}>+ Ad-hoc item</Btn>
+            <Btn size="sm" kind="ghost" onClick={() => setShowScope(true)}>Scope</Btn>
             <Btn size="sm" kind="ghost" onClick={rollForward}>Roll forward →</Btn>
           </div>
         )}
@@ -545,11 +671,11 @@ export default function EngagementDetail() {
       {tab === 'checklist' && (
         <div>
           {total > 0 && (
-            <StageBar items={items} activeFilter={statusFilter} onFilter={setStatusFilter} />
+            <StageBar items={scopedItems} activeFilter={statusFilter} onFilter={setStatusFilter} />
           )}
 
           {groupEntries.length === 0 ? (
-            <p className="text-sm text-slate-400">No items{statusFilter ? ` with status "${statusFilter}"` : ''}.</p>
+            <p className="text-sm text-slate-400">No items{statusFilter ? ` with status "${STATUS_LABEL[statusFilter] || statusFilter}"` : ''}.</p>
           ) : (
             groupEntries.map(([key, { label, items: groupItems }]) => (
               <SectionGroup
@@ -566,7 +692,7 @@ export default function EngagementDetail() {
       )}
 
       {/* Inbox */}
-      {tab === 'inbox' && <InboxTab engagementId={id} items={items} />}
+      {tab === 'inbox' && <InboxTab engagementId={id} items={scopedItems} />}
 
       {/* Documents */}
       {tab === 'documents' && <DocumentsTab engagementId={id} />}
@@ -585,6 +711,15 @@ export default function EngagementDetail() {
             <Btn onClick={addAdhoc} disabled={!adhocDesc.trim()}>Add item</Btn>
           </div>
         </Modal>
+      )}
+
+      {/* Scope modal */}
+      {showScope && (
+        <ScopeModal
+          items={items}
+          onClose={() => setShowScope(false)}
+          onSaved={load}
+        />
       )}
     </div>
   );

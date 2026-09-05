@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../db/pool.js';
 import { rbac } from '../middleware/rbac.js';
+import { defaultIncluded } from '../db/library_seed.js';
 
 const router = Router();
 
@@ -73,17 +74,47 @@ router.post('/', rbac('partner', 'manager'), async (req, res) => {
   if (!module || !clientId || !year) {
     return res.status(400).json({ error: 'module, clientId, year required' });
   }
+  const client = await pool.connect();
   try {
-    const { rows } = await pool.query(
+    await client.query('BEGIN');
+
+    const { rows } = await client.query(
       `INSERT INTO engagements (module, client_id, year, incharge, contact_phone, wa_group_id, deadline)
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
       [module, clientId, year, incharge, contactPhone, waGroupId, deadline]
     );
-    res.status(201).json({ engagement: toEngagement(rows[0]) });
+    const eng = rows[0];
+
+    // Seed items from library for this module
+    const { rows: heads } = await client.query(
+      `SELECT * FROM library_heads WHERE module = $1 ORDER BY sort_order, head_id`,
+      [module]
+    );
+    for (const head of heads) {
+      const { rows: libItems } = await client.query(
+        `SELECT * FROM library_items WHERE head_id_fk = $1 ORDER BY sort_order, ref`,
+        [head.id]
+      );
+      const included = defaultIncluded(head.section);
+      for (const it of libItems) {
+        await client.query(
+          `INSERT INTO items
+             (engagement_id, ref, section, head_id, sub, p, requestable, head_included, status)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'No progress')`,
+          [eng.id, it.ref, head.section, head.head_id, head.sub, it.p, it.req, included]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
+    res.status(201).json({ engagement: toEngagement(eng) });
   } catch (err) {
+    await client.query('ROLLBACK');
     if (err.code === '23505') return res.status(409).json({ error: 'Engagement already exists for this client/year/module' });
     console.error(err);
     res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
   }
 });
 

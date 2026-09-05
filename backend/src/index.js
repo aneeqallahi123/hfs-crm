@@ -12,6 +12,7 @@ import itemRoutes from './routes/items.js';
 import inboxRoutes from './routes/inbox.js';
 import documentRoutes from './routes/documents.js';
 import teamRoutes from './routes/team.js';
+import libraryRoutes from './routes/library.js';
 import webhookRoutes from './routes/webhooks.js';
 import eventRoutes from './routes/events.js';
 import { verifyToken } from './middleware/auth.js';
@@ -48,6 +49,7 @@ app.use('/api/inbox', inboxRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api/team', teamRoutes);
 app.use('/api/events', eventRoutes);
+app.use('/api/library', libraryRoutes);
 
 app.get('/health', (_, res) => res.json({ ok: true }));
 

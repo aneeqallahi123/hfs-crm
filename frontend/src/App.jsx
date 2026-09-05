@@ -10,6 +10,7 @@ import ClientDetail from './pages/ClientDetail.jsx';
 import EngagementDetail from './pages/EngagementDetail.jsx';
 import Team from './pages/Team.jsx';
 import Events from './pages/Events.jsx';
+import Library from './pages/Library.jsx';
 
 function RequireAuth({ children }) {
   const { user, loading } = useAuth();
@@ -58,6 +59,14 @@ function AppRoutes() {
           element={
             <RequireRole roles={['partner', 'manager']}>
               <Events />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="library"
+          element={
+            <RequireRole roles={['partner', 'manager']}>
+              <Library />
             </RequireRole>
           }
         />

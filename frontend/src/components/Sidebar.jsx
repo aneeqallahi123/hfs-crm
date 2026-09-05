@@ -20,10 +20,13 @@ export default function Sidebar() {
   const isStudent = user?.role === 'student';
   const isPartner = user?.role === 'partner';
 
+  const isPartnerOrManager = user?.role === 'partner' || user?.role === 'manager';
+
   const NAV = [
     { path: '/', label: 'Overview', hint: 'Where every client stands' },
     ...(!isStudent ? [{ path: '/clients', label: 'Clients', hint: 'Add, edit or remove clients' }] : []),
     ...(isPartner ? [{ path: '/team', label: 'Team', hint: 'Manage team members' }] : []),
+    ...(isPartnerOrManager ? [{ path: '/library', label: 'Library', hint: 'Master checklist template' }] : []),
     ...(!isStudent ? [{ path: '/events', label: 'Activity', hint: 'Who changed what, and when' }] : []),
   ];
 

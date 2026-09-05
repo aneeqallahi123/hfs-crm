@@ -125,7 +125,7 @@ router.patch('/bulk', async (req, res) => {
     for (const { id, ...fields } of updates) {
       const colMap = {
         status: 'status', statusSince: 'status_since', owner: 'owner',
-        fileNote: 'file_note', remarks: 'remarks',
+        fileNote: 'file_note', remarks: 'remarks', headIncluded: 'head_included',
       };
       const cols = [];
       const vals = [];
