@@ -353,13 +353,13 @@ function AddCustomHead({ section, onAdd }) {
 
 export default function ClientLibrary({ clientId, module = 'audit', canEdit, initialOpen = false }) {
   const toast = useToast();
-  const [open, setOpen] = useState(initialOpen);
   const [loading, setLoading] = useState(false);
   const [library, setLibrary] = useState([]);
   const [years, setYears] = useState([]);
   const [selectedYear, setSelectedYear] = useState(null);
   const [values, setValues] = useState([]);
   const [collapsed, setCollapsed] = useState({});
+  const loadedRef = useRef(false);
 
   const valuesMap = {};
   for (const v of values) {
@@ -382,11 +382,19 @@ export default function ClientLibrary({ clientId, module = 'audit', canEdit, ini
         api.clientLibrary.get(clientId, module),
         api.clientValues.list(clientId),
       ]);
-      setLibrary(libRes.library || []);
+      const lib = libRes.library || [];
+      setLibrary(lib);
       const ys = libRes.years || [];
       setYears(ys);
       if (ys.length && !selectedYear) setSelectedYear(ys[0]);
       setValues(Array.isArray(valRes) ? valRes : []);
+      // collapse all sections by default on first load
+      if (!loadedRef.current) {
+        const initial = {};
+        for (const sec of lib) initial[sec.section] = true;
+        setCollapsed(initial);
+        loadedRef.current = true;
+      }
     } catch (err) {
       toast(err.message, 'error');
     } finally {
@@ -394,11 +402,19 @@ export default function ClientLibrary({ clientId, module = 'audit', canEdit, ini
     }
   }
 
-  useEffect(() => { if (open) loadLibrary(); }, [open, clientId]);
+  useEffect(() => { loadLibrary(); }, [clientId]);
 
   function addYear(y) {
     if (!years.includes(y)) setYears([y, ...years]);
     setSelectedYear(y);
+    // collapse all sections when viewing a year for the first time
+    setCollapsed(prev => {
+      const next = { ...prev };
+      for (const sec of library) {
+        if (!(sec.section in next)) next[sec.section] = true;
+      }
+      return next;
+    });
   }
 
   async function excludeHead(head) {
@@ -465,85 +481,73 @@ export default function ClientLibrary({ clientId, module = 'audit', canEdit, ini
 
   return (
     <div className="mt-8">
-      <div className="flex items-center justify-between mb-4">
+      <div className="mb-4">
         <h2 className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
           Reference Data
         </h2>
-        <button
-          onClick={() => setOpen(!open)}
-          className="text-xs text-slate-500 hover:text-ink flex items-center gap-1"
-        >
-          {open ? '▾ Collapse' : '▸ Expand'}
-        </button>
       </div>
 
-      {!open && (
-        <p className="text-xs text-slate-400">Historical data from previous years, linked to the task library. Click Expand to view or fill in.</p>
-      )}
+      {loading ? (
+        <div className="text-sm text-slate-400 py-4">Loading…</div>
+      ) : (
+        <>
+          <YearSelector
+            years={years}
+            selected={selectedYear}
+            onSelect={setSelectedYear}
+            onAdd={addYear}
+          />
 
-      {open && (
-        <div>
-          {loading ? (
-            <div className="text-sm text-slate-400 py-4">Loading library…</div>
+          {!selectedYear ? (
+            <p className="text-xs text-slate-400 mt-1">Add or select a year above to view and fill in reference data.</p>
+          ) : library.length === 0 ? (
+            <p className="text-sm text-slate-400">No library data available for this module.</p>
           ) : (
-            <>
-              <YearSelector
-                years={years}
-                selected={selectedYear}
-                onSelect={setSelectedYear}
-                onAdd={addYear}
-              />
-
-              {library.length === 0 ? (
-                <p className="text-sm text-slate-400">No library data available for this module.</p>
-              ) : (
-                <div className="space-y-6">
-                  {library.map((section) => {
-                    const isC = collapsed[section.section];
-                    const totalVisible = section.heads.reduce((n, h) => n + (!h.excluded ? 1 : 0), 0);
-                    return (
-                      <div key={section.section}>
-                        <div className="flex items-center gap-2 mb-2">
-                          <button
-                            onClick={() => setCollapsed(p => ({ ...p, [section.section]: !isC }))}
-                            className="text-slate-400 text-xs"
-                          >{isC ? '▸' : '▾'}</button>
-                          <span className="text-sm font-semibold text-ink">{section.sectionName}</span>
-                          <span className="text-xs text-slate-400">{totalVisible} sub-categor{totalVisible !== 1 ? 'ies' : 'y'}</span>
-                        </div>
-                        {!isC && (
-                          <div className="space-y-3 pl-4">
-                            {section.heads.map((head) => (
-                              <HeadBlock
-                                key={head.headId}
-                                clientId={clientId}
-                                head={head}
-                                year={selectedYear}
-                                valuesMap={selectedYear ? Object.fromEntries(
-                                  Object.entries(valuesMap).map(([id, byYear]) => [id, byYear[selectedYear] || null])
-                                ) : {}}
-                                canEdit={canEdit}
-                                onExcludeHead={excludeHead}
-                                onExcludeItem={excludeItem}
-                                onUnexcludeItem={unexcludeItem}
-                                onAddCustomItem={addCustomItem}
-                                onRemoveCustomItem={removeCustomItem}
-                                onValueChange={handleValueChange}
-                              />
-                            ))}
-                            {canEdit && (
-                              <AddCustomHead section={section.section} onAdd={addCustomHead} />
+            <div className="space-y-6">
+              {library.map((section) => {
+                const isC = collapsed[section.section];
+                const totalVisible = section.heads.reduce((n, h) => n + (!h.excluded ? 1 : 0), 0);
+                return (
+                  <div key={section.section}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <button
+                        onClick={() => setCollapsed(p => ({ ...p, [section.section]: !isC }))}
+                        className="text-slate-400 text-xs"
+                      >{isC ? '▸' : '▾'}</button>
+                      <span className="text-sm font-semibold text-ink">{section.sectionName}</span>
+                      <span className="text-xs text-slate-400">{totalVisible} sub-categor{totalVisible !== 1 ? 'ies' : 'y'}</span>
+                    </div>
+                    {!isC && (
+                      <div className="space-y-3 pl-4">
+                        {section.heads.map((head) => (
+                          <HeadBlock
+                            key={head.headId}
+                            clientId={clientId}
+                            head={head}
+                            year={selectedYear}
+                            valuesMap={Object.fromEntries(
+                              Object.entries(valuesMap).map(([id, byYear]) => [id, byYear[selectedYear] || null])
                             )}
-                          </div>
+                            canEdit={canEdit}
+                            onExcludeHead={excludeHead}
+                            onExcludeItem={excludeItem}
+                            onUnexcludeItem={unexcludeItem}
+                            onAddCustomItem={addCustomItem}
+                            onRemoveCustomItem={removeCustomItem}
+                            onValueChange={handleValueChange}
+                          />
+                        ))}
+                        {canEdit && (
+                          <AddCustomHead section={section.section} onAdd={addCustomHead} />
                         )}
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           )}
-        </div>
+        </>
       )}
     </div>
   );
