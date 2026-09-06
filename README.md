@@ -8,7 +8,7 @@ A production CRM for managing audit clients, engagements, checklists, and docume
 
 | Service | URL |
 |---------|-----|
-| Frontend | https://hfc-crm.pages.dev |
+| Frontend | https://app.hfccrm.org |
 | Backend API | https://hfs-crm-production.up.railway.app |
 | Health check | https://hfs-crm-production.up.railway.app/health |
 
@@ -170,8 +170,8 @@ Item status values: `No progress` | `In progress` | `Completed` | `N/A`
 | `JWT_ACCESS_EXPIRY` | `15m` |
 | `JWT_REFRESH_SECRET` | separate secret |
 | `JWT_REFRESH_EXPIRY` | `7d` |
-| `CORS_ORIGIN` | `https://hfc-crm.pages.dev` |
-| `MINIO_ENDPOINT` | Cloudflare Tunnel hostname (no protocol) |
+| `CORS_ORIGIN` | `https://app.hfccrm.org` |
+| `MINIO_ENDPOINT` | `minio.hfccrm.org` (permanent Cloudflare Tunnel) |
 | `MINIO_PORT` | `443` |
 | `MINIO_USE_SSL` | `true` |
 | `MINIO_ACCESS_KEY` | MinIO root user |
