@@ -312,35 +312,15 @@ router.post('/:id/values/upload', rbac('partner', 'manager'), upload.single('fil
     const BUCKET = process.env.MINIO_BUCKET;
     await minioClient.putObject(BUCKET, key, req.file.buffer, req.file.buffer.length, { 'Content-Type': req.file.mimetype });
 
-    // Upsert value record (delete old file if replacing)
-    const existing = await pool.query(
-      `SELECT id, minio_key FROM client_item_values WHERE client_id=$1 AND year=$2
-       AND (library_item_id IS NOT DISTINCT FROM $3) AND (custom_item_id IS NOT DISTINCT FROM $4)`,
-      [clientId, year, libraryItemId || null, customItemId || null]
+    // Always insert a new row — multiple files allowed per item+year
+    const { rows: inserted } = await pool.query(
+      `INSERT INTO client_item_values(client_id, library_item_id, custom_item_id, year, minio_key, file_name, file_size, uploaded_at)
+       VALUES($1,$2,$3,$4,$5,$6,$7,now()) RETURNING id`,
+      [clientId, libraryItemId || null, customItemId || null, year, key, req.file.originalname, req.file.size]
     );
-    if (existing.rows.length && existing.rows[0].minio_key) {
-      try { await deleteFile(existing.rows[0].minio_key); } catch {}
-      await pool.query(
-        `UPDATE client_item_values SET minio_key=$1, file_name=$2, file_size=$3, uploaded_at=now(), text_value=NULL
-         WHERE id=$4`,
-        [key, req.file.originalname, req.file.size, existing.rows[0].id]
-      );
-    } else if (existing.rows.length) {
-      await pool.query(
-        `UPDATE client_item_values SET minio_key=$1, file_name=$2, file_size=$3, uploaded_at=now(), text_value=NULL
-         WHERE id=$4`,
-        [key, req.file.originalname, req.file.size, existing.rows[0].id]
-      );
-    } else {
-      await pool.query(
-        `INSERT INTO client_item_values(client_id, library_item_id, custom_item_id, year, minio_key, file_name, file_size, uploaded_at)
-         VALUES($1,$2,$3,$4,$5,$6,$7,now())`,
-        [clientId, libraryItemId || null, customItemId || null, year, key, req.file.originalname, req.file.size]
-      );
-    }
 
     const downloadUrl = await getPresignedUrl(key);
-    res.json({ ok: true, key, fileName: req.file.originalname, downloadUrl });
+    res.json({ ok: true, id: inserted[0].id, key, fileName: req.file.originalname, downloadUrl });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error' });

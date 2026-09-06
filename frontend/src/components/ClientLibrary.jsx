@@ -64,10 +64,11 @@ function YearSelector({ years, selected, onSelect, onAdd }) {
 
 // ── Document upload cell ──────────────────────────────────────────────────────
 
-function DocCell({ clientId, itemId, isCustom, year, value, onValueChange }) {
+function DocCell({ clientId, itemId, isCustom, year, values, onFileAdded, onFileRemoved }) {
   const toast = useToast();
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [removing, setRemoving] = useState(null);
   const inputRef = useRef(null);
 
   async function handleFile(file) {
@@ -81,11 +82,24 @@ function DocCell({ clientId, itemId, isCustom, year, value, onValueChange }) {
       else fd.append('libraryItemId', itemId);
       const res = await api.clientValues.upload(clientId, fd);
       if (res.error) throw new Error(res.error);
-      onValueChange({ fileName: res.fileName, downloadUrl: res.downloadUrl, minioKey: res.key });
+      onFileAdded({ id: res.id, fileName: res.fileName, downloadUrl: res.downloadUrl, minioKey: res.key });
     } catch (err) {
       toast(err.message, 'error');
     } finally {
       setUploading(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  }
+
+  async function removeFile(valueId) {
+    setRemoving(valueId);
+    try {
+      await api.clientValues.delete(clientId, valueId);
+      onFileRemoved(valueId);
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      setRemoving(null);
     }
   }
 
@@ -95,33 +109,41 @@ function DocCell({ clientId, itemId, isCustom, year, value, onValueChange }) {
     handleFile(e.dataTransfer.files[0]);
   }
 
-  if (value?.fileName) {
-    return (
-      <div className="flex items-center gap-2">
-        <a href={value.downloadUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-green hover:underline underline-offset-2 truncate max-w-[160px]" title={value.fileName}>
-          {value.fileName}
-        </a>
-        <button
-          onClick={() => inputRef.current?.click()}
-          className="text-[10px] text-slate-400 hover:text-ink border border-tint rounded px-1.5 py-0.5 shrink-0"
-        >Replace</button>
+  return (
+    <div className="flex flex-col gap-1 min-w-[200px]">
+      {values.map((v) => (
+        <div key={v.id} className="flex items-center gap-1 group">
+          <a
+            href={v.downloadUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-green hover:underline underline-offset-2 truncate max-w-[200px]"
+            title={v.fileName}
+          >
+            {v.fileName}
+          </a>
+          <button
+            onClick={() => removeFile(v.id)}
+            disabled={removing === v.id}
+            className="shrink-0 w-4 h-4 flex items-center justify-center rounded-full text-[10px] text-slate-300 hover:text-deep hover:bg-slate-100 transition-colors opacity-0 group-hover:opacity-100"
+            title="Remove file"
+          >
+            {removing === v.id ? '…' : '✕'}
+          </button>
+        </div>
+      ))}
+      <div
+        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={onDrop}
+        onClick={() => !uploading && inputRef.current?.click()}
+        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-dashed cursor-pointer transition-colors text-xs ${
+          dragging ? 'border-green bg-green/5 text-green' : 'border-tint text-slate-400 hover:border-green hover:text-green'
+        }`}
+      >
+        {uploading ? <span>Uploading…</span> : <><span>📎</span><span>{values.length ? 'Add another file' : 'Upload or drag file'}</span></>}
         <input ref={inputRef} type="file" className="hidden" onChange={(e) => handleFile(e.target.files[0])} />
       </div>
-    );
-  }
-
-  return (
-    <div
-      onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={onDrop}
-      onClick={() => !uploading && inputRef.current?.click()}
-      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-dashed cursor-pointer transition-colors text-xs ${
-        dragging ? 'border-green bg-green/5 text-green' : 'border-tint text-slate-400 hover:border-green hover:text-green'
-      }`}
-    >
-      {uploading ? <span>Uploading…</span> : <><span>📎</span><span>Upload or drag file</span></>}
-      <input ref={inputRef} type="file" className="hidden" onChange={(e) => handleFile(e.target.files[0])} />
     </div>
   );
 }
@@ -170,14 +192,15 @@ function TextCell({ clientId, itemId, isCustom, year, taskType, value, onValueCh
 
 // ── Single task item row ──────────────────────────────────────────────────────
 
-function ItemRow({ clientId, item, year, value, canEdit, onExclude, onValueChange }) {
+function ItemRow({ clientId, item, year, values, canEdit, onExclude, onValueChange, onFileAdded, onFileRemoved }) {
   const taskType = item.taskType || 'document';
+  const singleValue = Array.isArray(values) ? values[0] : values;
 
   return (
-    <div className={`px-3 py-2 flex items-center gap-2 ${item.excluded ? 'opacity-40' : ''}`}>
-      <span className="text-xs text-slate-400 w-12 font-mono shrink-0">{item.ref || '•'}</span>
-      <span className="text-sm text-ink flex-1 min-w-0">{item.p}</span>
-      <span className={`text-[10px] px-1.5 py-0.5 rounded border shrink-0 ${TYPE_COLORS[taskType] || TYPE_COLORS.document}`}>
+    <div className={`px-3 py-3 flex items-start gap-2 ${item.excluded ? 'opacity-40' : ''}`}>
+      <span className="text-xs text-slate-400 w-12 font-mono shrink-0 pt-0.5">{item.ref || '•'}</span>
+      <span className="text-sm text-ink flex-1 min-w-0 pt-0.5">{item.p}</span>
+      <span className={`text-[10px] px-1.5 py-0.5 rounded border shrink-0 mt-0.5 ${TYPE_COLORS[taskType] || TYPE_COLORS.document}`}>
         {TYPE_LABELS[taskType]}
       </span>
       {year && !item.excluded && (
@@ -188,8 +211,9 @@ function ItemRow({ clientId, item, year, value, canEdit, onExclude, onValueChang
               itemId={item.itemId}
               isCustom={item.isCustom}
               year={year}
-              value={value}
-              onValueChange={onValueChange}
+              values={Array.isArray(values) ? values : []}
+              onFileAdded={onFileAdded}
+              onFileRemoved={onFileRemoved}
             />
           ) : (
             <TextCell
@@ -198,7 +222,7 @@ function ItemRow({ clientId, item, year, value, canEdit, onExclude, onValueChang
               isCustom={item.isCustom}
               year={year}
               taskType={taskType}
-              value={value}
+              value={singleValue}
               onValueChange={onValueChange}
             />
           )}
@@ -207,7 +231,7 @@ function ItemRow({ clientId, item, year, value, canEdit, onExclude, onValueChang
       {canEdit && (
         <button
           onClick={() => onExclude(item)}
-          className={`text-[10px] shrink-0 rounded px-1.5 py-0.5 border transition-colors ${
+          className={`text-[10px] shrink-0 rounded px-1.5 py-0.5 border transition-colors mt-0.5 ${
             item.excluded
               ? 'border-green text-green hover:bg-green/10'
               : 'border-tint text-slate-400 hover:text-deep hover:border-deep'
@@ -269,7 +293,7 @@ function AddCustomItem({ onAdd }) {
 
 // ── Sub-category (head) block ─────────────────────────────────────────────────
 
-function HeadBlock({ clientId, head, year, valuesMap, canEdit, onExcludeHead, onExcludeItem, onUnexcludeItem, onAddCustomItem, onRemoveCustomItem, onValueChange }) {
+function HeadBlock({ clientId, head, year, valuesMap, canEdit, onExcludeHead, onExcludeItem, onUnexcludeItem, onAddCustomItem, onRemoveCustomItem, onValueChange, onFileAdded, onFileRemoved }) {
   const allItems = [...(head.items || []), ...(head.customItems || [])];
   const visibleCount = allItems.filter(i => !i.excluded).length;
 
@@ -301,10 +325,12 @@ function HeadBlock({ clientId, head, year, valuesMap, canEdit, onExcludeHead, on
               clientId={clientId}
               item={item}
               year={year}
-              value={valuesMap[item.itemId] || null}
+              values={valuesMap[item.itemId] ?? []}
               canEdit={canEdit}
               onExclude={(it) => it.isCustom ? onRemoveCustomItem(it.itemId) : (it.excluded ? onUnexcludeItem(it) : onExcludeItem(it))}
               onValueChange={(v) => onValueChange(item.itemId, v)}
+              onFileAdded={(v) => onFileAdded(item.itemId, v)}
+              onFileRemoved={(valueId) => onFileRemoved(item.itemId, valueId)}
             />
           ))}
           {canEdit && (
@@ -366,13 +392,14 @@ export default function ClientLibrary({ clientId, module = 'audit', canEdit, ini
     const key = v.libraryItemId || v.customItemId;
     if (key) {
       if (!valuesMap[key]) valuesMap[key] = {};
-      valuesMap[key][v.year] = v;
+      if (!valuesMap[key][v.year]) valuesMap[key][v.year] = [];
+      valuesMap[key][v.year].push(v);
     }
   }
 
-  function getVal(itemId) {
-    if (!selectedYear || !valuesMap[itemId]) return null;
-    return valuesMap[itemId][selectedYear] || null;
+  function getValArr(itemId) {
+    if (!selectedYear || !valuesMap[itemId]) return [];
+    return valuesMap[itemId][selectedYear] || [];
   }
 
   async function loadLibrary() {
@@ -479,6 +506,14 @@ export default function ClientLibrary({ clientId, module = 'audit', canEdit, ini
     });
   }
 
+  function handleFileAdded(itemId, newVal) {
+    setValues(prev => [...prev, { libraryItemId: itemId, customItemId: null, year: selectedYear, ...newVal }]);
+  }
+
+  function handleFileRemoved(itemId, valueId) {
+    setValues(prev => prev.filter(v => v.id !== valueId));
+  }
+
   return (
     <div className="mt-8">
       <div className="mb-4">
@@ -526,7 +561,7 @@ export default function ClientLibrary({ clientId, module = 'audit', canEdit, ini
                             head={head}
                             year={selectedYear}
                             valuesMap={Object.fromEntries(
-                              Object.entries(valuesMap).map(([id, byYear]) => [id, byYear[selectedYear] || null])
+                              Object.entries(valuesMap).map(([id, byYear]) => [id, byYear[selectedYear] || []])
                             )}
                             canEdit={canEdit}
                             onExcludeHead={excludeHead}
@@ -535,6 +570,8 @@ export default function ClientLibrary({ clientId, module = 'audit', canEdit, ini
                             onAddCustomItem={addCustomItem}
                             onRemoveCustomItem={removeCustomItem}
                             onValueChange={handleValueChange}
+                            onFileAdded={handleFileAdded}
+                            onFileRemoved={handleFileRemoved}
                           />
                         ))}
                         {canEdit && (
