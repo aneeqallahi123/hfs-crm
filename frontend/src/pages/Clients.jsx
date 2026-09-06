@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
@@ -23,9 +23,16 @@ export default function Clients() {
   const [editingId, setEditingId] = useState(null);
   const [editF, setEditF] = useState({});
 
+  const location = useLocation();
   const canEdit = user?.role === 'partner' || user?.role === 'manager';
   const up = (k) => (v) => setF((p) => ({ ...p, [k]: v }));
   const upEdit = (k) => (v) => setEditF((p) => ({ ...p, [k]: v }));
+
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get('add') === '1' && canEdit) {
+      setAdding(true);
+    }
+  }, [location.search, canEdit]);
 
   async function load() {
     try {

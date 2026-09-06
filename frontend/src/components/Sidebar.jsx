@@ -3,51 +3,6 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { api } from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
-import Modal from './Modal.jsx';
-import Btn from './Btn.jsx';
-import Field, { SelectField } from './Field.jsx';
-
-const MODULES = ['audit', 'tax', 'consulting', 'misc'];
-
-function NewClientModal({ onClose, onSaved }) {
-  const toast = useToast();
-  const navigate = useNavigate();
-  const [f, setF] = useState({ name: '', ntn: '', contactName: '', phone: '', module: 'audit' });
-  const [saving, setSaving] = useState(false);
-  const up = (k) => (v) => setF((p) => ({ ...p, [k]: v }));
-
-  async function save() {
-    if (!f.name.trim()) return;
-    setSaving(true);
-    try {
-      const client = await api.clients.create({ ...f, name: f.name.trim() });
-      toast(`${f.name.trim()} added`, 'success');
-      onSaved();
-      onClose();
-      navigate(`/clients/${client.id}`);
-    } catch (err) {
-      toast(err.message, 'error');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Modal title="Add client" onClose={onClose}>
-      <Field label="Client name" value={f.name} onChange={up('name')} placeholder="Ehsan Chappal Store (Pvt) Ltd" />
-      <Field label="NTN" value={f.ntn} onChange={up('ntn')} placeholder="1234567-8" />
-      <Field label="Contact person" value={f.contactName} onChange={up('contactName')} placeholder="Mr. Bilal" />
-      <Field label="WhatsApp number" value={f.phone} onChange={up('phone')} placeholder="0300 1234567" />
-      <SelectField label="Module" value={f.module} onChange={up('module')}>
-        {MODULES.map((m) => <option key={m} value={m}>{m.charAt(0).toUpperCase() + m.slice(1)}</option>)}
-      </SelectField>
-      <div className="flex justify-end gap-2 pt-1">
-        <Btn kind="ghost" onClick={onClose}>Cancel</Btn>
-        <Btn onClick={save} disabled={saving || !f.name.trim()}>{saving ? 'Saving…' : 'Save client'}</Btn>
-      </div>
-    </Modal>
-  );
-}
 
 function NewEngagementButton({ client, engagements, onCreated }) {
   const toast = useToast();
@@ -116,7 +71,6 @@ export default function Sidebar() {
   const [engagements, setEngagements] = useState([]);
   const [q, setQ] = useState('');
   const [openC, setOpenC] = useState({});
-  const [showNewClient, setShowNewClient] = useState(false);
 
   function load() {
     if (!user) return;
@@ -193,7 +147,7 @@ export default function Sidebar() {
         <div className="flex items-center justify-between px-2 mb-2">
           <span className="text-[11px] text-paper/55">Clients</span>
           {!isStudent && (
-            <button onClick={() => setShowNewClient(true)} title="Add client" aria-label="Add client" className="h-6 px-2 rounded-md text-[11px] text-paper/80 bg-paper/10 hover:bg-paper/20">Add</button>
+            <button onClick={() => navigate('/clients?add=1')} title="Add client" aria-label="Add client" className="h-6 px-2 rounded-md text-[11px] text-paper/80 bg-paper/10 hover:bg-paper/20">Add</button>
           )}
         </div>
         {clients.length > 6 && (
@@ -250,7 +204,7 @@ export default function Sidebar() {
         <button onClick={handleLogout} className="text-[11px] text-paper/55 hover:text-paper/90 transition-colors">Sign out</button>
       </div>
 
-      {showNewClient && <NewClientModal onClose={() => setShowNewClient(false)} onSaved={load} />}
+
     </aside>
   );
 }
