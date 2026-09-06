@@ -35,6 +35,7 @@ router.get('/', async (req, res) => {
           ref: it.ref,
           p: it.p,
           req: it.req,
+          taskType: it.task_type || 'document',
           sortOrder: it.sort_order,
         })),
     }));
@@ -70,8 +71,8 @@ router.put('/:module', rbac('partner'), async (req, res) => {
       for (let ii = 0; ii < items.length; ii++) {
         const it = items[ii];
         await client.query(
-          `INSERT INTO library_items (head_id_fk, ref, p, req, sort_order) VALUES ($1, $2, $3, $4, $5)`,
-          [h.id, it.ref || '', it.p || '', it.req !== false, ii]
+          `INSERT INTO library_items (head_id_fk, ref, p, req, task_type, sort_order) VALUES ($1, $2, $3, $4, $5, $6)`,
+          [h.id, it.ref || '', it.p || '', it.req !== false, it.taskType || 'document', ii]
         );
       }
     }

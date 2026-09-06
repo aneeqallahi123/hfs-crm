@@ -16,7 +16,7 @@ router.get('/', async (req, res) => {
       values.push(module);
     }
     const { rows } = await pool.query(
-      `SELECT id, module, name, ntn, contact_name, phone, is_firm, created_at, updated_at
+      `SELECT id, module, name, ntn, contact_name, phone, wa_group_id, is_firm, created_at, updated_at
        FROM clients ${where} ORDER BY name`,
       values
     );
@@ -44,14 +44,14 @@ router.get('/:id', async (req, res) => {
 
 // POST /api/clients
 router.post('/', rbac('partner', 'manager'), async (req, res) => {
-  const { module, name, ntn = '', contactName = '', phone = '', isFirm = false } = req.body;
+  const { module, name, ntn = '', contactName = '', phone = '', waGroupId = '', isFirm = false } = req.body;
   if (!module || !name) return res.status(400).json({ error: 'module and name required' });
   try {
     const { rows } = await pool.query(
-      `INSERT INTO clients (module, name, ntn, contact_name, phone, is_firm)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO clients (module, name, ntn, contact_name, phone, wa_group_id, is_firm)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [module, name, ntn, contactName, phone, isFirm]
+      [module, name, ntn, contactName, phone, waGroupId, isFirm]
     );
     await logEvent({
       by: req.user.name, userId: req.user.sub, module, clientId: rows[0].id,
@@ -66,7 +66,7 @@ router.post('/', rbac('partner', 'manager'), async (req, res) => {
 
 // PATCH /api/clients/:id
 router.patch('/:id', rbac('partner', 'manager'), async (req, res) => {
-  const { name, ntn, contactName, phone, module } = req.body;
+  const { name, ntn, contactName, phone, module, waGroupId } = req.body;
   try {
     const { rows: beforeRows } = await pool.query('SELECT * FROM clients WHERE id = $1', [req.params.id]);
     const before = beforeRows[0];
@@ -81,6 +81,7 @@ router.patch('/:id', rbac('partner', 'manager'), async (req, res) => {
     if (contactName !== undefined) { updates.push(`contact_name = $${i++}`); values.push(contactName); }
     if (phone !== undefined)       { updates.push(`phone = $${i++}`);        values.push(phone); }
     if (module !== undefined)      { updates.push(`module = $${i++}`);       values.push(module); }
+    if (waGroupId !== undefined)   { updates.push(`wa_group_id = $${i++}`);  values.push(waGroupId); }
     if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
 
     updates.push('updated_at = NOW()');
@@ -136,6 +137,7 @@ function toClient(row) {
     ntn: row.ntn,
     contactName: row.contact_name,
     phone: row.phone,
+    waGroupId: row.wa_group_id || '',
     isFirm: row.is_firm,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

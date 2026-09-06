@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import Modal from '../components/Modal.jsx';
 import Btn from '../components/Btn.jsx';
 import Field, { SelectField } from '../components/Field.jsx';
+import ClientLibrary from '../components/ClientLibrary.jsx';
 
 const MODULES = ['audit', 'tax', 'consulting', 'misc'];
 
@@ -62,6 +63,7 @@ export default function ClientDetail() {
   const { id } = useParams();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const toast = useToast();
   const [client, setClient] = useState(null);
   const [engagements, setEngagements] = useState([]);
@@ -117,6 +119,7 @@ export default function ClientDetail() {
           {client.ntn && <span>NTN: <span className="font-mono text-ink">{client.ntn}</span></span>}
           {client.contactName && <span>Contact: {client.contactName}</span>}
           {client.phone && <span>{client.phone}</span>}
+          {client.waGroupId && <span>WA Group: <span className="text-ink">{client.waGroupId}</span></span>}
         </div>
       </header>
 
@@ -153,6 +156,15 @@ export default function ClientDetail() {
           ))}
         </div>
       )}
+
+      <div className="mt-8 border-t border-tint pt-8">
+        <ClientLibrary
+          clientId={client.id}
+          module={client.module || 'audit'}
+          canEdit={canEdit}
+          initialOpen={!!location.state?.openLibrary}
+        />
+      </div>
 
       {showNew && (
         <NewEngagementModal

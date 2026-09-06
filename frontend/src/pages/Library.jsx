@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { api } from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
@@ -7,6 +7,7 @@ import EditableText from '../components/EditableText.jsx';
 import { SECTION_NAMES } from '../lib/metrics.js';
 
 const ORDER = { A: 0, B: 1, C: 2, D: 3 };
+const TASK_TYPES = ['document', 'number', 'information'];
 
 function AddSub({ onAdd }) {
   const [v, setV] = useState('');
@@ -31,6 +32,20 @@ function AddDoc({ onAdd }) {
   );
 }
 
+function TaskTypeSelect({ value, onChange }) {
+  return (
+    <select
+      value={value || 'document'}
+      onChange={(e) => onChange(e.target.value)}
+      className="border border-tint rounded text-[11px] px-1.5 py-1 bg-paper text-ink focus:outline-none focus:border-green shrink-0"
+    >
+      {TASK_TYPES.map((t) => (
+        <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>
+      ))}
+    </select>
+  );
+}
+
 let tmpId = 0;
 const newId = () => `tmp_${Date.now()}_${tmpId++}`;
 
@@ -51,21 +66,50 @@ export default function Library() {
     api.library.get('audit')
       .then((data) => {
         const heads = Array.isArray(data) ? data : (data?.library || []);
-        setLib(heads.map((h) => ({ id: h.id || h.headId, headId: h.headId, section: h.section, sub: h.sub, items: (h.items || []).map((it) => ({ ref: it.ref, p: it.p, req: it.req !== false })) })));
+        setLib(heads.map((h) => ({
+          id: h.id || h.headId,
+          headId: h.headId,
+          section: h.section,
+          sub: h.sub,
+          items: (h.items || []).map((it) => ({
+            ref: it.ref,
+            p: it.p,
+            req: it.req !== false,
+            taskType: it.taskType || 'document',
+          })),
+        })));
+        // Collapse all categories by default
+        const allCodes = Array.from(new Set(heads.map((h) => h.section)));
+        const initCollapsed = {};
+        allCodes.forEach((c) => { initCollapsed[c] = true; });
+        setCollapsed(initCollapsed);
         setDirty(false);
       })
       .catch((err) => toast(err.message, 'error'))
       .finally(() => setLoading(false));
   }, []);
 
-  const catCodes = Array.from(new Set([...Object.keys(names), ...lib.map((h) => h.section)]))
-    .sort((a, b) => (ORDER[a] ?? 99) - (ORDER[b] ?? 99) || String(names[a] || a).localeCompare(String(names[b] || b)));
+  const catCodes = useMemo(() => (
+    Array.from(new Set([...Object.keys(names), ...lib.map((h) => h.section)]))
+      .sort((a, b) => (ORDER[a] ?? 99) - (ORDER[b] ?? 99) || String(names[a] || a).localeCompare(String(names[b] || b)))
+  ), [names, lib]);
+
+  const allCollapsed = catCodes.every((c) => collapsed[c]);
+
+  function toggleAll() {
+    const next = !allCollapsed;
+    const m = {};
+    catCodes.forEach((c) => { m[c] = next; });
+    setCollapsed(m);
+  }
 
   function markDirty(fn) { setLib(fn); setDirty(true); }
 
   function addCategory() {
     if (!newCat.trim()) return;
-    setNames((n) => ({ ...n, ['cat_' + newId()]: newCat.trim() }));
+    const code = 'cat_' + newId();
+    setNames((n) => ({ ...n, [code]: newCat.trim() }));
+    setCollapsed((prev) => ({ ...prev, [code]: false }));
     setNewCat('');
     setDirty(true);
   }
@@ -81,7 +125,7 @@ export default function Library() {
   function addHead(code, sub) { markDirty((prev) => [...prev, { id: newId(), headId: newId(), section: code, sub, items: [] }]); }
   function renameHead(id, sub) { markDirty((prev) => prev.map((h) => (h.id === id ? { ...h, sub } : h))); }
   function removeHead(id) { markDirty((prev) => prev.filter((h) => h.id !== id)); }
-  function addItem(id, p) { markDirty((prev) => prev.map((h) => (h.id === id ? { ...h, items: [...h.items, { ref: '•', p, req: true }] } : h))); }
+  function addItem(id, p) { markDirty((prev) => prev.map((h) => (h.id === id ? { ...h, items: [...h.items, { ref: '•', p, req: true, taskType: 'document' }] } : h))); }
   function updateItem(id, idx, patch) { markDirty((prev) => prev.map((h) => (h.id === id ? { ...h, items: h.items.map((it, i) => (i === idx ? { ...it, ...patch } : it)) } : h))); }
   function removeItem(id, idx) { markDirty((prev) => prev.map((h) => (h.id === id ? { ...h, items: h.items.filter((_, i) => i !== idx) } : h))); }
 
@@ -104,12 +148,24 @@ export default function Library() {
   return (
     <div className="stagger p-8 max-w-4xl">
       <header className="mb-6">
-        <h1 className="font-serif text-[32px] leading-[1.15] font-medium text-ink tracking-[-0.01em]">Library</h1>
-        <div className="mt-3 h-px w-12 bg-green" />
-        <p className="text-sm text-slate-500 mt-1">
-          The master list every audit starts from — categories, sub-categories, and the tasks inside them. Each task is either{' '}
-          <span className="text-green font-medium">Client</span> (the client sends it) or <span className="text-deep font-medium">Team work</span> (our team performs it).
-          Changes apply to new engagements and roll-forwards; existing engagements keep the list they were scoped with.
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="font-serif text-[32px] leading-[1.15] font-medium text-ink tracking-[-0.01em]">Task Library</h1>
+            <div className="mt-3 h-px w-12 bg-green" />
+          </div>
+          {canEdit && dirty && (
+            <div className="pt-1 shrink-0">
+              <Btn onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</Btn>
+            </div>
+          )}
+        </div>
+        <p className="text-sm text-slate-500 mt-3 max-w-2xl">
+          The master checklist for every audit engagement — organised by category and sub-category.
+          Each item is marked as either{' '}
+          <span className="text-green font-medium">Client</span> (submitted by the client) or{' '}
+          <span className="text-deep font-medium">Team work</span> (completed by our team),
+          and classified by type: Document, Number, or Information.
+          Updates here apply to all new engagements and roll-forwards.
         </p>
       </header>
 
@@ -120,6 +176,14 @@ export default function Library() {
             <input value={newCat} onChange={(e) => setNewCat(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') addCategory(); }} placeholder="e.g. E · Group Reporting" className="w-full mt-1 border border-tint rounded-md px-3 py-2 text-sm focus:outline-none focus:border-green" />
           </label>
           <Btn onClick={addCategory} disabled={!newCat.trim()}>Add category</Btn>
+        </div>
+      )}
+
+      {catCodes.length > 0 && (
+        <div className="flex items-center gap-3 mb-4">
+          <button onClick={toggleAll} className="text-xs text-slate-500 hover:text-ink underline underline-offset-2">
+            {allCollapsed ? 'Expand all' : 'Collapse all'}
+          </button>
         </div>
       )}
 
@@ -174,6 +238,13 @@ export default function Library() {
                               </>
                             )}
                             {canEdit ? (
+                              <TaskTypeSelect value={it.taskType} onChange={(v) => updateItem(h.id, idx, { taskType: v })} />
+                            ) : (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded border border-tint text-slate-400 shrink-0">
+                                {(it.taskType || 'document').charAt(0).toUpperCase() + (it.taskType || 'document').slice(1)}
+                              </span>
+                            )}
+                            {canEdit ? (
                               <div className="flex rounded-md border border-tint overflow-hidden text-[11px] shrink-0" role="group" aria-label="Who provides this">
                                 <button onClick={() => updateItem(h.id, idx, { req: true })} className={`px-2 py-1 ${it.req ? 'bg-green text-paper' : 'text-ink hover:bg-fog'}`} title="The client sends this to us">Client</button>
                                 <button onClick={() => updateItem(h.id, idx, { req: false })} className={`px-2 py-1 border-l border-tint ${!it.req ? 'bg-deep text-paper' : 'text-ink hover:bg-fog'}`} title="Our team performs this">Team work</button>
@@ -195,12 +266,6 @@ export default function Library() {
           );
         })}
       </div>
-
-      {canEdit && dirty && (
-        <div className="fixed bottom-6 right-6">
-          <Btn onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</Btn>
-        </div>
-      )}
     </div>
   );
 }

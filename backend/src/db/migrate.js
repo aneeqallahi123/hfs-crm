@@ -50,6 +50,68 @@ export async function runMigrations() {
     )
   `);
 
+  // Add task_type column if missing
+  await pool.query(`
+    ALTER TABLE library_items
+    ADD COLUMN IF NOT EXISTS task_type TEXT NOT NULL DEFAULT 'document'
+  `);
+
+  // Add wa_group_id to clients if missing
+  await pool.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS wa_group_id TEXT NOT NULL DEFAULT ''`);
+
+  // Client library customization tables
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS client_lib_exclusions (
+      client_id UUID REFERENCES clients ON DELETE CASCADE,
+      head_id   UUID REFERENCES library_heads ON DELETE CASCADE,
+      PRIMARY KEY(client_id, head_id)
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS client_lib_item_exclusions (
+      client_id UUID REFERENCES clients ON DELETE CASCADE,
+      item_id   UUID REFERENCES library_items ON DELETE CASCADE,
+      PRIMARY KEY(client_id, item_id)
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS client_lib_custom_heads (
+      id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      client_id  UUID REFERENCES clients ON DELETE CASCADE,
+      section    TEXT NOT NULL,
+      sub        TEXT NOT NULL,
+      sort_order INT  DEFAULT 0
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS client_lib_custom_items (
+      id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      client_id       UUID REFERENCES clients ON DELETE CASCADE,
+      head_id_fk      UUID REFERENCES library_heads ON DELETE CASCADE,
+      custom_head_fk  UUID REFERENCES client_lib_custom_heads ON DELETE CASCADE,
+      ref             TEXT NOT NULL DEFAULT '',
+      p               TEXT NOT NULL DEFAULT '',
+      req             BOOLEAN NOT NULL DEFAULT true,
+      task_type       TEXT NOT NULL DEFAULT 'document',
+      sort_order      INT  DEFAULT 0
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS client_item_values (
+      id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      client_id       UUID NOT NULL REFERENCES clients ON DELETE CASCADE,
+      library_item_id UUID REFERENCES library_items ON DELETE CASCADE,
+      custom_item_id  UUID REFERENCES client_lib_custom_items ON DELETE CASCADE,
+      year            TEXT NOT NULL,
+      text_value      TEXT,
+      minio_key       TEXT,
+      file_name       TEXT,
+      file_size       BIGINT,
+      uploaded_at     TIMESTAMPTZ,
+      created_at      TIMESTAMPTZ DEFAULT now()
+    )
+  `);
+
   // Seed audit library if empty
   const { rows: existing } = await pool.query(
     `SELECT COUNT(*) AS cnt FROM library_heads WHERE module = 'audit'`

@@ -9,8 +9,8 @@ A production CRM for managing audit clients, engagements, checklists, and docume
 | Service | URL |
 |---------|-----|
 | Frontend | https://hfc-crm.pages.dev |
-| Backend API | https://backend-production-fd304.up.railway.app |
-| Health check | https://backend-production-fd304.up.railway.app/health |
+| Backend API | https://hfs-crm-production.up.railway.app |
+| Health check | https://hfs-crm-production.up.railway.app/health |
 
 ---
 
@@ -30,11 +30,11 @@ A production CRM for managing audit clients, engagements, checklists, and docume
            │                      │
 ┌──────────▼──────────┐  ┌───────▼────────────────────┐
 │  Railway            │  │  Local Mini PC              │
-│  Managed PostgreSQL │  │  MinIO (Docker)             │
-│  postgres.railway   │  │  ← Cloudflare Tunnel →      │
-│  .internal:5432     │  │  operator-gba-...           │
-└─────────────────────┘  │  .trycloudflare.com (temp)  │
-                         └─────────────────────────────┘
+│  PostgreSQL         │  │  MinIO (Docker)             │
+│  (postgres:16)      │  │  ← Cloudflare Tunnel →      │
+│  postgres.railway   │  │  (temp trycloudflare.com    │
+│  .internal:5432     │  │   URL — dies on reboot)     │
+└─────────────────────┘  └─────────────────────────────┘
 ```
 
 **Planned (not yet set up):**
@@ -117,7 +117,7 @@ hfs-crm/
 
 ## Backend API
 
-Base URL: `https://backend-production-fd304.up.railway.app/api`
+Base URL: `https://hfs-crm-production.up.railway.app/api`
 
 All endpoints except `/auth/*` and `/webhooks/*` require `Authorization: Bearer <accessToken>`.
 
@@ -184,7 +184,7 @@ Item status values: `No progress` | `In progress` | `Completed` | `N/A`
 
 | Variable | Value |
 |----------|-------|
-| `VITE_API_URL` | `https://backend-production-fd304.up.railway.app/api` |
+| `VITE_API_URL` | `https://hfs-crm-production.up.railway.app/api` (hardcoded in `.github/workflows/deploy.yml`) |
 
 ### GitHub Secrets (for CI)
 
@@ -220,12 +220,14 @@ Railway does **not** auto-deploy on push (GitHub webhook not set up for the Rail
 
 ## Railway IDs (for MCP connector)
 
+Railway account: `grand-generosity` (hfc202612)
+
 | Resource | ID |
 |----------|----|
-| Project | `87d93f2b-f07d-45cd-a6f2-3fe3a4a3b50b` |
-| Backend service | `2f470b2f-0505-4a5f-beb0-ffe501add113` |
-| Postgres service | `82f12543-1804-4c13-97dd-e8fe15a71f4f` |
-| Production environment | `879ea755-9c8c-4fbc-ab27-a116cb765c63` |
+| Project | `3ee2f56d-6a02-4bbe-aa81-267774948562` |
+| Backend service (hfs-crm) | `c4a07f97-85f9-4b81-81ed-e6980fe8f849` |
+| Postgres service | `f15b944f-c264-4142-b897-017dc1397656` |
+| Production environment | `788bcf26-4123-423e-bcfd-4cc764e1ff81` |
 
 ---
 
@@ -257,4 +259,4 @@ Railway does **not** auto-deploy on push (GitHub webhook not set up for the Rail
 - [ ] **n8n setup** on local mini PC — workflow automation connecting Evolution API → backend webhooks
 - [ ] **Evolution API setup** on local mini PC — WhatsApp Business API for document intake
 - [x] **Frontend** — all pages built and deployed
-- [ ] **Set up Railway auto-deploy** — add GitHub webhook for `hfc202612` Railway account (currently triggered manually via MCP)
+- [ ] **Set up Railway auto-deploy** — Railway account `grand-generosity` (hfc202612) has GitHub connected but auto-deploy not configured; currently triggered manually via Railway MCP

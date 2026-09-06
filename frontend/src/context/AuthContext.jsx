@@ -9,8 +9,8 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     api.auth.me()
-      .then(({ user }) => { setUser(user); })
-      .catch(() => {})
+      .then(({ user }) => setUser(user))
+      .catch(() => setAccessToken(null))
       .finally(() => setLoading(false));
   }, []);
 

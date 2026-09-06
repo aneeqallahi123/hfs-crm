@@ -10,8 +10,8 @@ const router = Router();
 const COOKIE_NAME = 'hfc_refresh';
 const COOKIE_OPTS = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: 'strict',
+  secure: true,
+  sameSite: 'none', // frontend and backend are on different domains; 'strict' blocks cross-site cookies
   maxAge: 7 * 24 * 60 * 60 * 1000, // 7d in ms
 };
 
@@ -19,7 +19,7 @@ function issueAccessToken(user) {
   return jwt.sign(
     { sub: user.id, name: user.name, role: user.role },
     process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_ACCESS_EXPIRY || '15m' }
+    { expiresIn: process.env.JWT_ACCESS_EXPIRY || '7d' }
   );
 }
 

@@ -13,6 +13,7 @@ import inboxRoutes from './routes/inbox.js';
 import documentRoutes from './routes/documents.js';
 import teamRoutes from './routes/team.js';
 import libraryRoutes from './routes/library.js';
+import clientLibraryRoutes from './routes/client-library.js';
 import webhookRoutes from './routes/webhooks.js';
 import eventRoutes from './routes/events.js';
 import { verifyToken } from './middleware/auth.js';
@@ -42,6 +43,7 @@ app.use('/api/webhooks', webhookRoutes);      // webhook auth is its own shared-
 
 app.use('/api', apiLimiter, verifyToken);     // everything below requires JWT
 
+app.use('/api/clients', clientLibraryRoutes);
 app.use('/api/clients', clientRoutes);
 app.use('/api/engagements', engagementRoutes);
 app.use('/api/items', itemRoutes);

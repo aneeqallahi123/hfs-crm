@@ -27,7 +27,7 @@ jobs:
       - run: cd frontend && npm install
       - run: cd frontend && npm run build
         env:
-          VITE_API_URL: https://backend-production-fd304.up.railway.app/api
+          VITE_API_URL: https://hfs-crm-production.up.railway.app/api
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
