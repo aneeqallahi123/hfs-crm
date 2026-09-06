@@ -43,8 +43,8 @@ app.use('/api/webhooks', webhookRoutes);      // webhook auth is its own shared-
 
 app.use('/api', apiLimiter, verifyToken);     // everything below requires JWT
 
-app.use('/api/clients', clientRoutes);
 app.use('/api/clients', clientLibraryRoutes);
+app.use('/api/clients', clientRoutes);
 app.use('/api/engagements', engagementRoutes);
 app.use('/api/items', itemRoutes);
 app.use('/api/inbox', inboxRoutes);
