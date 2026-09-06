@@ -11,6 +11,7 @@ const MODULES = ['audit', 'tax', 'consulting', 'misc'];
 
 function NewClientModal({ onClose, onSaved }) {
   const toast = useToast();
+  const navigate = useNavigate();
   const [f, setF] = useState({ name: '', ntn: '', contactName: '', phone: '', module: 'audit' });
   const [saving, setSaving] = useState(false);
   const up = (k) => (v) => setF((p) => ({ ...p, [k]: v }));
@@ -19,10 +20,11 @@ function NewClientModal({ onClose, onSaved }) {
     if (!f.name.trim()) return;
     setSaving(true);
     try {
-      await api.clients.create({ ...f, name: f.name.trim() });
+      const client = await api.clients.create({ ...f, name: f.name.trim() });
       toast(`${f.name.trim()} added`, 'success');
       onSaved();
       onClose();
+      navigate(`/clients/${client.id}`);
     } catch (err) {
       toast(err.message, 'error');
     } finally {

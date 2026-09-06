@@ -21,7 +21,12 @@ function NewEngagementModal({ client, engagements, onClose, onSaved }) {
     deadline: '',
   });
   const [saving, setSaving] = useState(false);
+  const [team, setTeam] = useState([]);
   const up = k => v => setF(p => ({ ...p, [k]: v }));
+
+  useEffect(() => {
+    api.team.list().then(setTeam).catch(() => {});
+  }, []);
 
   const yearTaken = engagements.some(e => e.year === Number(f.year));
 
@@ -47,7 +52,10 @@ function NewEngagementModal({ client, engagements, onClose, onSaved }) {
       <SelectField label="Module" value={f.module} onChange={up('module')}>
         {MODULES.map(m => <option key={m} value={m}>{m.charAt(0).toUpperCase() + m.slice(1)}</option>)}
       </SelectField>
-      <Field label="In-charge" value={f.incharge} onChange={up('incharge')} placeholder="Team member name" />
+      <SelectField label="In-charge" value={f.incharge} onChange={up('incharge')}>
+        <option value="">— Select team member —</option>
+        {team.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+      </SelectField>
       <Field label="Deadline" value={f.deadline} onChange={up('deadline')} type="date" />
       <div className="flex justify-end gap-2 pt-1">
         <Btn kind="ghost" onClick={onClose}>Cancel</Btn>
