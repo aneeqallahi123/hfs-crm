@@ -170,27 +170,27 @@ export default function Clients() {
                     className={`border-b border-tint/60 last:border-0 ${isEditing ? 'bg-fog/60' : 'hover:bg-fog/40 cursor-pointer'}`}
                     onClick={() => !isEditing && navigate(`/clients/${c.id}`)}
                   >
-                    <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
+                    <td className="px-4 py-2" onClick={(e) => isEditing && e.stopPropagation()}>
                       {isEditing
                         ? <input value={editF.name} onChange={e => upEdit('name')(e.target.value)} className="w-full border border-tint rounded px-2 py-1 text-sm text-ink focus:outline-none focus:border-green" />
                         : <span className="text-ink font-medium">{c.name}</span>}
                     </td>
-                    <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
+                    <td className="px-4 py-2" onClick={(e) => isEditing && e.stopPropagation()}>
                       {isEditing
                         ? <input value={editF.ntn} onChange={e => upEdit('ntn')(e.target.value)} className="w-full border border-tint rounded px-2 py-1 text-sm text-slate-600 focus:outline-none focus:border-green" />
                         : <span className="text-slate-600">{c.ntn || '—'}</span>}
                     </td>
-                    <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
+                    <td className="px-4 py-2" onClick={(e) => isEditing && e.stopPropagation()}>
                       {isEditing
                         ? <input value={editF.contactName} onChange={e => upEdit('contactName')(e.target.value)} className="w-full border border-tint rounded px-2 py-1 text-sm text-slate-600 focus:outline-none focus:border-green" />
                         : <span className="text-slate-600">{c.contactName || '—'}</span>}
                     </td>
-                    <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
+                    <td className="px-4 py-2" onClick={(e) => isEditing && e.stopPropagation()}>
                       {isEditing
                         ? <input value={editF.phone} onChange={e => upEdit('phone')(e.target.value)} className="w-full border border-tint rounded px-2 py-1 text-sm text-slate-600 font-mono focus:outline-none focus:border-green" />
                         : <span className="text-slate-600 font-mono">{c.phone || '—'}</span>}
                     </td>
-                    <td className="px-4 py-2" onClick={(e) => e.stopPropagation()}>
+                    <td className="px-4 py-2" onClick={(e) => isEditing && e.stopPropagation()}>
                       {isEditing
                         ? <input value={editF.waGroupId} onChange={e => upEdit('waGroupId')(e.target.value)} className="w-full border border-tint rounded px-2 py-1 text-sm text-slate-600 focus:outline-none focus:border-green" />
                         : <span className="text-slate-600">{c.waGroupId || '—'}</span>}
