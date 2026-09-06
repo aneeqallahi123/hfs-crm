@@ -9,8 +9,10 @@ A production CRM for managing audit clients, engagements, checklists, and docume
 | Service | URL |
 |---------|-----|
 | Frontend | https://app.hfccrm.org |
+| Frontend (alt) | https://hfc-smart-audit.pages.dev |
 | Backend API | https://hfs-crm-production.up.railway.app |
 | Health check | https://hfs-crm-production.up.railway.app/health |
+| MinIO console | https://minio.hfccrm.org |
 
 ---
 
@@ -18,8 +20,9 @@ A production CRM for managing audit clients, engagements, checklists, and docume
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│  Cloudflare Pages                                    │
-│  Vite + React 18 SPA — hfc-crm.pages.dev            │
+│  Cloudflare Pages (hfc-smart-audit)                  │
+│  Vite + React 18 SPA                                 │
+│  app.hfccrm.org / hfc-smart-audit.pages.dev          │
 └────────────────────┬────────────────────────────────┘
                      │ HTTPS (VITE_API_URL)
 ┌────────────────────▼────────────────────────────────┐
@@ -32,9 +35,10 @@ A production CRM for managing audit clients, engagements, checklists, and docume
 │  Railway            │  │  Local Mini PC              │
 │  PostgreSQL         │  │  MinIO (Docker)             │
 │  (postgres:16)      │  │  ← Cloudflare Tunnel →      │
-│  postgres.railway   │  │  (temp trycloudflare.com    │
-│  .internal:5432     │  │   URL — dies on reboot)     │
-└─────────────────────┘  └─────────────────────────────┘
+│  postgres.railway   │  │  minio.hfccrm.org           │
+│  .internal:5432     │  │  (permanent named tunnel,   │
+└─────────────────────┘  │   runs as launchd service)  │
+                         └─────────────────────────────┘
 ```
 
 **Planned (not yet set up):**
@@ -62,7 +66,7 @@ hfs-crm/
 │   │   │   ├── engagements.js   # CRUD /engagements + roll-forward
 │   │   │   ├── items.js         # checklist items CRUD + bulk update
 │   │   │   ├── inbox.js         # WhatsApp file inbox
-│   │   │   ├── documents.js     # file upload/download via MinIO
+│   │   │   ├── documents.js     # file upload/download via MinIO (50 MB limit)
 │   │   │   ├── team.js          # user management (partner only)
 │   │   │   ├── events.js        # audit event log
 │   │   │   └── webhooks.js      # n8n webhooks (shared-secret auth)
@@ -81,6 +85,7 @@ hfs-crm/
 │   │   ├── components/
 │   │   │   ├── Layout.jsx       # sidebar + outlet
 │   │   │   ├── Sidebar.jsx      # nav links (role-aware)
+│   │   │   ├── ClientLibrary.jsx # reference data per year (collapsed by default)
 │   │   │   ├── Modal.jsx
 │   │   │   ├── Btn.jsx
 │   │   │   └── Field.jsx
@@ -98,8 +103,6 @@ hfs-crm/
 │   ├── vite.config.js
 │   └── package.json
 ├── .github/workflows/deploy.yml # CI: lint backend + deploy frontend to CF Pages
-├── MINIO_SETUP_CONTEXT.md       # context doc for MinIO session
-├── FRONTEND_BUILD_CONTEXT.md    # context doc for frontend build session
 └── README.md                    # this file
 ```
 
@@ -144,7 +147,7 @@ Item status values: `No progress` | `In progress` | `Completed` | `N/A`
 `GET /inbox?engagementId=` · `PATCH /inbox/:id/assign`
 
 ### Documents
-`POST /documents/upload` (multipart) · `GET /documents/:id/download` → presigned URL · `DELETE /documents/:id`
+`POST /documents/upload` (multipart, max 50 MB) · `GET /documents/:id/download` → presigned URL · `DELETE /documents/:id`
 
 ### Team (partner only)
 `GET /team` · `POST /team` · `PATCH /team/:id` · `DELETE /team/:id`
@@ -171,7 +174,7 @@ Item status values: `No progress` | `In progress` | `Completed` | `N/A`
 | `JWT_REFRESH_SECRET` | separate secret |
 | `JWT_REFRESH_EXPIRY` | `7d` |
 | `CORS_ORIGIN` | `https://app.hfccrm.org` |
-| `MINIO_ENDPOINT` | `minio.hfccrm.org` (permanent Cloudflare Tunnel) |
+| `MINIO_ENDPOINT` | `minio.hfccrm.org` |
 | `MINIO_PORT` | `443` |
 | `MINIO_USE_SSL` | `true` |
 | `MINIO_ACCESS_KEY` | MinIO root user |
@@ -190,20 +193,31 @@ Item status values: `No progress` | `In progress` | `Completed` | `N/A`
 
 | Secret | Purpose |
 |--------|---------|
-| `CLOUDFLARE_API_TOKEN` | Wrangler deploys to Pages |
-| `CLOUDFLARE_ACCOUNT_ID` | `63a6c25304f9a1c93135c345c6160119` |
+| `CLOUDFLARE_API_TOKEN` | Wrangler deploys to Pages (new Cloudflare account: Hfc.crm@outlook.com) |
+| `CLOUDFLARE_ACCOUNT_ID` | `fbf096c172ecdca093a64faf0a19e002` |
 
 ---
 
 ## MinIO (Local Mini PC)
 
 - Running via Docker Compose at `localhost:9000` (API) and `localhost:9001` (console)
-- Exposed via Cloudflare Tunnel (currently temporary `trycloudflare.com` URL — dies on reboot)
-- **Permanent tunnel pending** — requires buying a domain (e.g. `hfc-smart-audit.com`)
+- Exposed via **permanent** Cloudflare Tunnel `hfc-minio` at `minio.hfccrm.org`
+- Tunnel runs as a macOS launchd service — survives reboots automatically
 - Bucket: `hfc-documents` (auto-created on backend startup)
-- Credentials: `hfc_admin` / (password set during setup — stored in Docker Compose on mini PC)
+- Tunnel config: `~/.cloudflared/config.yml` on the Mini PC
 
-See `MINIO_SETUP_CONTEXT.md` for full setup details.
+### Tunnel management (on Mini PC)
+```bash
+# Check status
+sudo launchctl list | grep cloudflare
+
+# View logs
+tail -f /Library/Logs/com.cloudflare.cloudflared.out.log
+
+# Stop / start
+sudo launchctl stop com.cloudflare.cloudflared
+sudo launchctl start com.cloudflare.cloudflared
+```
 
 ---
 
@@ -212,9 +226,20 @@ See `MINIO_SETUP_CONTEXT.md` for full setup details.
 Every push to `main`:
 1. GitHub Actions lints the backend (`npm run lint --if-present`)
 2. Builds the frontend (`npm run build` with `VITE_API_URL`)
-3. Deploys to Cloudflare Pages via Wrangler
+3. Deploys to Cloudflare Pages project `hfc-smart-audit` via Wrangler
 
-Railway does **not** auto-deploy on push (GitHub webhook not set up for the Railway account). To trigger a Railway redeploy, use the Railway MCP connector's `connect-service-source` tool.
+Railway does **not** auto-deploy on push. To trigger a Railway redeploy, use the Railway MCP connector's `redeploy` tool or push a new deployment from the Railway dashboard.
+
+---
+
+## Cloudflare Setup
+
+| Resource | Details |
+|----------|---------|
+| Account | `Hfc.crm@outlook.com` |
+| Domain | `hfccrm.org` |
+| Pages project | `hfc-smart-audit` → `app.hfccrm.org` |
+| Tunnel | `hfc-minio` (ID: `9960c899-ac01-4d08-a1a3-2e94f05b1197`) → `minio.hfccrm.org` |
 
 ---
 
@@ -231,14 +256,14 @@ Railway account: `grand-generosity` (hfc202612)
 
 ---
 
-## Frontend Pages (all live at hfc-crm.pages.dev)
+## Frontend Pages
 
 | Page | Path | Access |
 |------|------|--------|
 | Login | `/login` | Public |
 | Dashboard | `/` | All roles |
 | Clients | `/clients` | All roles |
-| Client Detail + Engagements | `/clients/:id` | All roles |
+| Client Detail + Reference Data | `/clients/:id` | All roles |
 | Engagement Detail (checklist, inbox, docs) | `/engagements/:id` | All roles |
 | Team Management | `/team` | Partner only |
 | Events / Audit Log | `/events` | Partner + Manager |
@@ -255,8 +280,10 @@ Railway account: `grand-generosity` (hfc202612)
 
 ## Pending / Next Steps
 
-- [ ] **Permanent Cloudflare Tunnel** for MinIO — buy domain (e.g. `hfc-smart-audit.com`), set up named tunnel + launchd service so it survives reboots
 - [ ] **n8n setup** on local mini PC — workflow automation connecting Evolution API → backend webhooks
 - [ ] **Evolution API setup** on local mini PC — WhatsApp Business API for document intake
-- [x] **Frontend** — all pages built and deployed
 - [ ] **Set up Railway auto-deploy** — Railway account `grand-generosity` (hfc202612) has GitHub connected but auto-deploy not configured; currently triggered manually via Railway MCP
+- [x] **Frontend** — all pages built and deployed to `app.hfccrm.org`
+- [x] **Permanent MinIO tunnel** — `hfc-minio` tunnel running as launchd service at `minio.hfccrm.org`
+- [x] **Domain** — `hfccrm.org` purchased and configured (Cloudflare account: Hfc.crm@outlook.com)
+- [x] **Reference Data UI** — year-gated, sections collapsed by default
