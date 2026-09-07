@@ -221,29 +221,34 @@ Items carry a `kind` field: `document` (default) | `number` | `information` — 
 
 **`send-wa-message`** — outbound  
 Trigger: `POST https://n8n.hfccrm.org/webhook/hfs-send-wa-message`  
-Nodes: Webhook → Auth Check (`x-webhook-secret` header) → Evolution API `POST /message/sendText/{instance}` → Respond OK / Respond 401
+Nodes: Webhook → Auth Check (`$json.headers['x-webhook-secret']` compared to hardcoded secret) → Evolution API `POST http://evolution-api:8080/message/sendText/my-whatsapp` → Respond OK / Respond 401
+
+> **Note:** n8n Community Edition does not support `$env` variables inside nodes. Secrets (Evolution API key, webhook secret) are hardcoded directly in the node values. `$request.headers` is only available in the Webhook node itself — downstream IF/Code nodes must use `$json.headers`.
 
 **`receive-wa-file`** — inbound  
-Trigger: Evolution API `MESSAGES_UPSERT` webhook  
-Nodes: Filter media messages → Extract fields → `POST /api/webhooks/inbound-file` → Log errors
+Trigger: Evolution API `MESSAGES_UPSERT` webhook → `POST https://n8n.hfccrm.org/webhook/hfs-receive-wa-file`  
+Nodes: Filter media → Filter groups only (`@g.us`) → Evolution API `POST http://evolution-api:8080/chat/getBase64FromMediaMessage/my-whatsapp` → `POST /api/webhooks/inbound-file` → Log errors
+
+> **Critical:** The Evolution API decrypt call must use the Docker service name `evolution-api` not `localhost`. Using `localhost:8080` inside the n8n container causes every incoming message execution to hang indefinitely, saturating the HTTP connection pool and breaking outbound sends too.
 
 ### Outbound — "Send to group" flow
 
 1. Partner selects tasks in EngagementDetail, clicks **Message client**
 2. ComposeModal opens with auto-composed message (editable)
 3. **Send to group** button calls `POST /api/engagements/:id/whatsapp-message`
-4. Backend forwards to n8n with `{ groupId, messageText }` + `x-webhook-secret` header (10 s timeout)
-5. n8n calls Evolution API → message delivered to WA group
+4. Backend forwards to n8n with `{ groupId, messageText }` + `x-webhook-secret` header (35 s timeout)
+5. n8n validates secret, calls Evolution API `http://evolution-api:8080/message/sendText/my-whatsapp` → message delivered to WA group
 6. On success: statuses flip to `Requested`, inline confirmation shown in modal
 
 ### Inbound — file intake flow
 
 1. Client shares file in linked WA group
-2. Evolution API fires `MESSAGES_UPSERT` webhook to n8n
-3. n8n filters for media, POSTs `{ groupId, mediaUrl, fileName, mimeType, sender, messageId }` to `/webhooks/inbound-file`
-4. Backend resolves engagement by `wa_group_id`, downloads file from Evolution API, uploads to MinIO
-5. `inbox_files` row inserted with `source='whatsapp'`; unrecognised groups go to `unmatched_inbox`
-6. Files appear in the engagement's Documents inbox
+2. Evolution API fires `MESSAGES_UPSERT` webhook to n8n (`hfs-receive-wa-file`)
+3. n8n filters for media messages from group chats only (`@g.us`)
+4. n8n calls Evolution API `POST http://evolution-api:8080/chat/getBase64FromMediaMessage/my-whatsapp` to decrypt the WhatsApp-encrypted media and get base64
+5. n8n POSTs `{ groupId, sender, messageId, fileName, fileBase64, mimeType }` to `POST /api/webhooks/inbound-file`
+6. Backend decodes base64 → uploads to MinIO → inserts `inbox_files` row matched by `wa_group_id`; unrecognised groups go to `unmatched_inbox` (`matched: false`)
+7. Files appear in the engagement's Documents inbox
 
 ---
 
@@ -338,9 +343,11 @@ sudo launchctl start com.cloudflare.cloudflared
 - Bucket: `hfc-documents` (auto-created on backend startup)
 
 ### n8n
-- Docker at `localhost:5678`
+- Docker Compose project `automation-stack` at `localhost:5678`
 - Workflows imported from `n8n/` directory in this repo
-- Community edition — env vars not accessible inside nodes; secrets are hardcoded in workflow node values
+- Community edition — `$env` variables are **not** accessible inside workflow nodes; secrets (Evolution API key, webhook secret) must be hardcoded directly in node parameter values
+- Evolution API is reachable inside n8n as `http://evolution-api:8080` (Docker service name on `automation-net` bridge network) — never use `localhost:8080` or `host.docker.internal` from inside n8n nodes
+- `$request.headers` only works inside the Webhook node itself; downstream nodes must use `$json.headers`
 
 ---
 
