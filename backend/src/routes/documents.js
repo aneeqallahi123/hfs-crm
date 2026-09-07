@@ -2,7 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { pool } from '../db/pool.js';
 import { rbac } from '../middleware/rbac.js';
-import { uploadFile, getPresignedUrl, deleteFile } from '../storage/minio.js';
+import { uploadFile, getPresignedUrl, deleteFile, streamFile } from '../storage/minio.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
@@ -88,8 +88,17 @@ router.get('/:fileId/download', async (req, res) => {
       }
     }
 
-    const url = await getPresignedUrl(rows[0].minio_key);
-    res.json({ url });
+    const file = rows[0];
+    const ext = (file.minio_key || '').split('.').pop().toLowerCase();
+    const mimeMap = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', xls: 'application/vnd.ms-excel', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', doc: 'application/msword' };
+    const mime = mimeMap[ext] || 'application/octet-stream';
+
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(file.original_name || file.name || 'file')}`);
+
+    const stream = await streamFile(file.minio_key);
+    stream.pipe(res);
+    stream.on('error', (err) => { console.error('Stream error', err); if (!res.headersSent) res.status(500).end(); });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error' });
