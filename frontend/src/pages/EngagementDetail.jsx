@@ -1187,9 +1187,9 @@ export default function EngagementDetail() {
           <div className="flex flex-wrap items-center gap-2">
 
             {/* Client messaging workflow group */}
-            <div className="flex items-stretch rounded-lg border border-tint overflow-hidden text-xs">
-              {selecting ? (
-                <>
+            {selecting ? (
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-stretch rounded-lg border border-tint overflow-hidden text-xs">
                   <button onClick={stopSelect} className="px-3 py-1.5 text-slate-500 hover:bg-fog border-r border-tint transition-colors">Cancel</button>
                   <button
                     onClick={openCompose}
@@ -1198,22 +1198,27 @@ export default function EngagementDetail() {
                   >
                     Message{messageable > 0 ? <span className="ml-1.5 font-normal opacity-80 tabular-nums">{messageable}</span> : null}
                   </button>
-                </>
-              ) : (
-                <>
-                  <button onClick={() => startSelect(null)} className="px-3 py-1.5 text-slate-600 hover:bg-fog border-r border-tint transition-colors">
-                    Select tasks
-                  </button>
-                  <button
-                    onClick={() => startSelect(owedToUs)}
-                    disabled={owed === 0}
-                    className={`px-3 py-1.5 font-medium transition-colors ${owed > 0 ? 'text-ink hover:bg-fog' : 'text-slate-400 cursor-not-allowed'}`}
-                  >
-                    Message client{owed > 0 ? <span className="ml-1.5 text-[10px] font-normal text-slate-400 tabular-nums">{owed} pending</span> : null}
-                  </button>
-                </>
-              )}
-            </div>
+                </div>
+                <span className="text-[10px] text-slate-400">Select:</span>
+                <button onClick={() => startSelect(owedToUs)} className="text-xs text-green hover:underline underline-offset-2">Everything owed</button>
+                <button onClick={() => startSelect((it) => it.headIncluded && it.requestable && it.status === 'No progress')} className="text-xs text-slate-500 hover:underline underline-offset-2">Not yet requested</button>
+                <button onClick={() => startSelect((it) => owedToUs(it) && it.status === 'Requested')} className="text-xs text-slate-500 hover:underline underline-offset-2">Awaited</button>
+                <button onClick={() => setSel({})} className="text-xs text-slate-400 hover:underline underline-offset-2">Clear</button>
+              </div>
+            ) : (
+              <div className="flex items-stretch rounded-lg border border-tint overflow-hidden text-xs">
+                <button onClick={() => startSelect(null)} className="px-3 py-1.5 text-slate-600 hover:bg-fog border-r border-tint transition-colors">
+                  Select tasks
+                </button>
+                <button
+                  onClick={() => startSelect(owedToUs)}
+                  disabled={owed === 0}
+                  className={`px-3 py-1.5 font-medium transition-colors ${owed > 0 ? 'text-ink hover:bg-fog' : 'text-slate-400 cursor-not-allowed'}`}
+                >
+                  Message client{owed > 0 ? <span className="ml-1.5 text-[10px] font-normal text-slate-400 tabular-nums">{owed} pending</span> : null}
+                </button>
+              </div>
+            )}
 
             {/* Scope */}
             {libraryHeads.length > 0 && (
@@ -1269,17 +1274,6 @@ export default function EngagementDetail() {
               <button onClick={() => setStageFilter('na')} className="hover:text-ink">{naCount} N/A</button>
             )}
           </div>
-        </div>
-      )}
-
-      {selecting && (
-        <div className="mb-4 rounded-lg border border-tint bg-fog px-4 py-2.5 text-sm text-ink flex flex-wrap items-center gap-x-4 gap-y-2">
-          <span>Tick tasks — one at a time or a whole heading — then message the client or assign them from the bar below.</span>
-          <span className="flex-1" />
-          <button onClick={() => startSelect(owedToUs)} className="text-xs text-green hover:underline underline-offset-2">Everything owed</button>
-          <button onClick={() => startSelect((it) => it.headIncluded && it.requestable && it.status === 'No progress')} className="text-xs text-green hover:underline underline-offset-2">Not yet requested</button>
-          <button onClick={() => startSelect((it) => owedToUs(it) && it.status === 'Requested')} className="text-xs text-green hover:underline underline-offset-2">Awaited</button>
-          <button onClick={() => setSel({})} className="text-xs text-slate-600 hover:underline underline-offset-2">Clear</button>
         </div>
       )}
 
@@ -1346,16 +1340,6 @@ export default function EngagementDetail() {
         })}
       </section>
 
-      {selecting && selItems.length > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 bg-paper border border-tint rounded-full pl-5 pr-2 py-2 flex items-center gap-3">
-          <span className="text-sm text-ink tabular-nums">{selItems.length} selected</span>
-          <span className="w-px h-5 bg-tint" />
-          <span className="text-xs text-slate-400 tabular-nums" title="What the message will contain">
-            {[preview.fresh.length && `${preview.fresh.length} new`, preview.awaited.length && `${preview.awaited.length} reminder${preview.awaited.length > 1 ? 's' : ''}`, preview.resend.length && `${preview.resend.length} resend`].filter(Boolean).join(' · ') || 'nothing to send'}
-          </span>
-          <Btn size="sm" onClick={openCompose} disabled={messageable === 0} title={messageable ? "Write the message from what's ticked" : 'Nothing ticked can be messaged'}>Message client</Btn>
-        </div>
-      )}
 
       {scoping && <ScopePanel orderedHeads={libraryHeads} setHeadIncluded={setHeadIncluded} updateItem={updateItem} onClose={() => setScoping(false)} engagementId={id} onReload={load} />}
       {compose && (
