@@ -51,7 +51,7 @@
     },
     {
       "parameters": {
-        "url": "=http://localhost:8080/chat/getBase64FromMediaMessage/my-whatsapp",
+        "url": "=http://evolution-api:8080/chat/getBase64FromMediaMessage/my-whatsapp",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
