@@ -640,6 +640,7 @@ function ScopePanel({ orderedHeads, setHeadIncluded, onClose, updateItem, engage
 function ComposeModal({ compose, setCompose, phone, waGroupId, engagementId, onConfirm, onGroupSent }) {
   const [copied, setCopied] = useState(false);
   const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
   const { toast } = useToast();
 
   async function copy() {
@@ -651,10 +652,10 @@ function ComposeModal({ compose, setCompose, phone, waGroupId, engagementId, onC
     try {
       const itemIds = compose.items.map((it) => it.id);
       await api.engagements.sendWhatsapp(engagementId, { itemIds, messageText: compose.text });
-      toast('Message sent to WhatsApp group — requests moved to Awaited', 'success');
-      onGroupSent();
+      setSent(true);
+      setTimeout(() => onGroupSent(), 1500);
     } catch (err) {
-      toast(err.message || 'Failed to send to WhatsApp group', 'error');
+      toast(err.message || 'Failed to send to WhatsApp group. Please try again.', 'error');
     } finally {
       setSending(false);
     }
@@ -665,30 +666,57 @@ function ComposeModal({ compose, setCompose, phone, waGroupId, engagementId, onC
     compose.awaited.length && `${compose.awaited.length} reminder${compose.awaited.length > 1 ? 's' : ''}`,
     compose.resend.length && `${compose.resend.length} resend${compose.resend.length > 1 ? 's' : ''}`,
   ].filter(Boolean).join(' · ');
+
+  const groupLabel = waGroupId
+    ? (waGroupId.length > 20 ? waGroupId.slice(0, 20) + '…' : waGroupId)
+    : null;
+
   return (
     <Modal title="Message client" onClose={() => setCompose(null)} wide>
-      <p className="text-xs text-slate-500 mb-3">
-        {parts} · to +{phone || '—'}. Edit the wording if you like. New requests move to Awaited when you send; reminders are counted.
-        {compose.skipped > 0 && <span className="text-slate-400"> {compose.skipped} ticked item{compose.skipped > 1 ? 's' : ''} left out — received, complete, N/A or team work.</span>}
-      </p>
-      <textarea value={compose.text} onChange={(e) => setCompose({ ...compose, text: e.target.value })} className="w-full h-64 border border-tint rounded-lg p-3 text-sm font-mono text-ink bg-fog focus:outline-none resize-none" />
-      <div className="flex items-center justify-between pt-4">
-        <Btn kind="ghost" onClick={copy}>{copied ? 'Copied ✓' : 'Copy text'}</Btn>
-        <div className="flex gap-2">
-          <Btn kind="ghost" onClick={() => setCompose(null)}>Cancel</Btn>
-          <Btn kind="ghost" onClick={() => onConfirm(false)} title="Record this as sent without opening WhatsApp">Mark as sent</Btn>
-          <Btn kind="ghost" onClick={() => onConfirm(true)} disabled={!phone}>Open WhatsApp</Btn>
-          <Btn
-            onClick={sendToGroup}
-            disabled={!waGroupId || sending}
-            title={waGroupId ? 'Send directly to the linked WhatsApp group' : 'No WA group linked to this engagement'}
-          >
-            {sending ? 'Sending…' : 'Send to group'}
-          </Btn>
+      <div className="flex items-start justify-between mb-3">
+        <div>
+          <p className="text-sm font-medium text-ink">{parts || 'No items to send'}</p>
+          {compose.skipped > 0 && (
+            <p className="text-xs text-slate-400 mt-0.5">
+              {compose.skipped} ticked item{compose.skipped > 1 ? 's' : ''} left out — received, complete, N/A or team work.
+            </p>
+          )}
+        </div>
+        <div className="text-right ml-4 shrink-0">
+          {groupLabel
+            ? <p className="text-xs text-slate-500">Sending to group <span className="font-mono text-ink">{groupLabel}</span></p>
+            : phone
+              ? <p className="text-xs text-slate-500">To <span className="font-mono text-ink">+{phone}</span></p>
+              : <p className="text-xs text-slate-400">No group or phone linked</p>
+          }
+          <p className="text-xs text-slate-400 mt-0.5">Edit the message below before sending.</p>
         </div>
       </div>
-      {!waGroupId && <p className="text-xs text-deep mt-2 text-right">No WA group linked — add a group ID on this engagement to send directly.</p>}
-      {!phone && waGroupId && <p className="text-xs text-slate-400 mt-2 text-right">No phone number on file — use "Send to group" or copy the text.</p>}
+      <textarea value={compose.text} onChange={(e) => setCompose({ ...compose, text: e.target.value })} className="w-full h-64 border border-tint rounded-lg p-3 text-sm font-mono text-ink bg-fog focus:outline-none resize-none" />
+
+      {sent ? (
+        <div className="flex items-center justify-center gap-2 mt-4 py-3 px-4 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm font-medium">
+          <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+          Message sent to group — tasks moved to Awaited
+        </div>
+      ) : (
+        <div className="flex items-center justify-between pt-4">
+          <Btn kind="ghost" onClick={copy}>{copied ? 'Copied ✓' : 'Copy text'}</Btn>
+          <div className="flex gap-2">
+            <Btn kind="ghost" onClick={() => setCompose(null)}>Cancel</Btn>
+            <Btn kind="ghost" onClick={() => onConfirm(false)} title="Record this as sent without opening WhatsApp">Mark as sent</Btn>
+            <Btn kind="ghost" onClick={() => onConfirm(true)} disabled={!phone}>Open WhatsApp</Btn>
+            <Btn
+              onClick={sendToGroup}
+              disabled={!waGroupId || sending}
+              title={waGroupId ? 'Send directly to the linked WhatsApp group' : 'No WA group linked to this engagement'}
+            >
+              {sending ? 'Sending…' : 'Send to group'}
+            </Btn>
+          </div>
+        </div>
+      )}
+      {!waGroupId && !sent && <p className="text-xs text-deep mt-2 text-right">No WA group linked — add a group ID on this engagement to send directly.</p>}
     </Modal>
   );
 }
@@ -1321,12 +1349,6 @@ export default function EngagementDetail() {
       {selecting && selItems.length > 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 bg-paper border border-tint rounded-full pl-5 pr-2 py-2 flex items-center gap-3">
           <span className="text-sm text-ink tabular-nums">{selItems.length} selected</span>
-          <span className="text-xs text-slate-400">Assign to</span>
-          <select value="" aria-label="Assign selected tasks to" onChange={(e) => { if (e.target.value) assignSelected(e.target.value); }} className="text-xs border border-tint rounded-md px-2 py-1 bg-paper focus:outline-none focus:border-green">
-            <option value="">choose…</option>
-            {team.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
-            <option value="__none">nobody</option>
-          </select>
           <span className="w-px h-5 bg-tint" />
           <span className="text-xs text-slate-400 tabular-nums" title="What the message will contain">
             {[preview.fresh.length && `${preview.fresh.length} new`, preview.awaited.length && `${preview.awaited.length} reminder${preview.awaited.length > 1 ? 's' : ''}`, preview.resend.length && `${preview.resend.length} resend`].filter(Boolean).join(' · ') || 'nothing to send'}
