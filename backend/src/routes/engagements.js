@@ -297,7 +297,7 @@ router.post('/:id/whatsapp-message', rbac('partner', 'manager'), async (req, res
         'x-webhook-secret': process.env.WEBHOOK_SECRET || '',
       },
       body: JSON.stringify({ groupId: eng.wa_group_id, messageText: messageText.trim() }),
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(35000),
     });
 
     if (!n8nRes.ok) {

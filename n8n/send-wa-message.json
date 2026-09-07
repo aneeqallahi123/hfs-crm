@@ -49,7 +49,7 @@
             { "name": "text", "value": "={{ $json.body.messageText }}" }
           ]
         },
-        "options": { "timeout": 8000 }
+        "options": { "timeout": 30000 }
       },
       "name": "Evolution API — Send Text",
       "type": "n8n-nodes-base.httpRequest",
