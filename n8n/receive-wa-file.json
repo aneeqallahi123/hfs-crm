@@ -11,7 +11,7 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
       "position": [250, 300],
-      "notes": "Configure this URL in Evolution API as the webhook for MESSAGES_UPSERT events on your instance."
+      "notes": "Configure this URL in Evolution API as the webhook for MESSAGES_UPSERT events on your instance. Enable 'Webhook Base64' in Evolution API so media files arrive as base64 in the payload — no separate decrypt call needed."
     },
     {
       "parameters": {
@@ -51,27 +51,6 @@
     },
     {
       "parameters": {
-        "url": "=http://localhost:8080/chat/getBase64FromMediaMessage/my-whatsapp",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "apikey", "value": "C9221582-AA4C-495D-AE6E-6CEC348D292C" },
-            { "name": "Content-Type", "value": "application/json" }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ message: $json.body.data, convertToMp4: false }) }}",
-        "options": { "timeout": 30000 }
-      },
-      "name": "Evolution: Decrypt & Get Base64",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [850, 100],
-      "notes": "Evolution API decrypts the WhatsApp media encryption and returns the file as base64. This is required — the raw CDN URL contains encrypted bytes that cannot be opened directly."
-    },
-    {
-      "parameters": {
         "url": "=https://hfs-crm-production.up.railway.app/api/webhooks/inbound-file",
         "sendHeaders": true,
         "headerParameters": {
@@ -82,14 +61,14 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ groupId: $('Filter: Groups Only').item.json.body.data.key.remoteJid, sender: $('Filter: Groups Only').item.json.body.data.key.participant || $('Filter: Groups Only').item.json.body.data.key.remoteJid, messageId: $('Filter: Groups Only').item.json.body.data.key.id, fileName: $('Filter: Groups Only').item.json.body.data.message?.documentMessage?.fileName || $('Filter: Groups Only').item.json.body.data.message?.imageMessage?.caption || ($('Filter: Groups Only').item.json.body.data.messageType + '_' + $('Filter: Groups Only').item.json.body.data.key.id), fileBase64: $json.base64, mimeType: $json.mimetype || $('Filter: Groups Only').item.json.body.data.message?.documentMessage?.mimetype || $('Filter: Groups Only').item.json.body.data.message?.imageMessage?.mimetype || 'application/octet-stream' }) }}",
+        "jsonBody": "={{ JSON.stringify({ groupId: $json.body.data.key.remoteJid, sender: $json.body.data.key.participant || $json.body.data.key.remoteJid, messageId: $json.body.data.key.id, fileName: $json.body.data.message?.documentMessage?.fileName || $json.body.data.message?.imageMessage?.caption || ($json.body.data.messageType + '_' + $json.body.data.key.id), fileBase64: $json.body.data.message?.documentMessage?.base64 || $json.body.data.message?.imageMessage?.base64 || $json.body.data.message?.audioMessage?.base64 || $json.body.data.message?.videoMessage?.base64 || $json.body.data.message?.stickerMessage?.base64 || $json.body.data.message?.pttMessage?.base64, mimeType: $json.body.data.message?.documentMessage?.mimetype || $json.body.data.message?.imageMessage?.mimetype || $json.body.data.message?.audioMessage?.mimetype || $json.body.data.message?.videoMessage?.mimetype || 'application/octet-stream' }) }}",
         "options": { "timeout": 30000 }
       },
       "name": "POST to CRM Webhook",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1050, 100],
-      "notes": "Sends decrypted file as base64 to the CRM backend. Backend decodes → uploads to MinIO → inserts inbox_files row."
+      "position": [850, 100],
+      "notes": "Sends file as base64 to the CRM backend. Evolution API Webhook Base64 must be ON — base64 arrives directly in the payload, no separate decrypt call needed. Backend decodes → uploads to MinIO → inserts inbox_files row."
     },
     {
       "parameters": {
@@ -98,7 +77,7 @@
       "name": "Log Error",
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
-      "position": [1250, 200],
+      "position": [1050, 200],
       "notes": "No retry loop — the CRM webhook is idempotent (dedup by messageId). If it fails, review logs."
     }
   ],
@@ -112,12 +91,6 @@
     },
     "Filter: Groups Only": {
       "main": [
-        [{ "node": "Evolution: Decrypt & Get Base64", "type": "main", "index": 0 }],
-        []
-      ]
-    },
-    "Evolution: Decrypt & Get Base64": {
-      "main": [
         [{ "node": "POST to CRM Webhook", "type": "main", "index": 0 }],
         []
       ]
@@ -129,11 +102,12 @@
   "_meta": {
     "templateCredsSetupCompleted": false,
     "notes": [
-      "Required env vars in n8n: CRM_BACKEND_URL (e.g. https://your-crm.railway.app), WEBHOOK_SECRET",
-      "In Evolution API: set this workflow's webhook URL for event MESSAGES_UPSERT on your instance",
-      "The Evolution API decrypt call (getBase64FromMediaMessage) is mandatory — WhatsApp CDN URLs contain encrypted bytes.",
-      "Evolution API delivers ALL group messages from ALL monitored groups — the CRM resolves the right engagement by groupId",
-      "Files from groups not linked to any engagement are stored in unmatched_inbox for manual review"
+      "PREREQUISITE: In Evolution API → webhook settings, enable 'Webhook Base64' — this makes media arrive as base64 in the payload so no separate decrypt API call is needed.",
+      "Required env vars in n8n: none — URL and secret are hardcoded (update WEBHOOK_SECRET_HERE with your actual secret).",
+      "In Evolution API: set this workflow's webhook URL for event MESSAGES_UPSERT on your instance.",
+      "Webhook URL format: http://host.docker.internal:5678/webhook/hfs-receive-wa-file (if Evolution API runs in Docker on the same host as n8n).",
+      "Evolution API delivers ALL group messages from ALL monitored groups — the CRM resolves the right engagement by groupId.",
+      "Files from groups not linked to any engagement are stored in unmatched_inbox for manual review."
     ]
   }
 }
