@@ -626,11 +626,29 @@ function ScopePanel({ orderedHeads, setHeadIncluded, onClose, updateItem, engage
   );
 }
 
-function ComposeModal({ compose, setCompose, phone, onConfirm }) {
+function ComposeModal({ compose, setCompose, phone, waGroupId, engagementId, onConfirm, onGroupSent }) {
   const [copied, setCopied] = useState(false);
+  const [sending, setSending] = useState(false);
+  const { toast } = useToast();
+
   async function copy() {
     try { await navigator.clipboard.writeText(compose.text); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {}
   }
+
+  async function sendToGroup() {
+    setSending(true);
+    try {
+      const itemIds = compose.items.map((it) => it.id);
+      await api.engagements.sendWhatsapp(engagementId, { itemIds, messageText: compose.text });
+      toast('Message sent to WhatsApp group — requests moved to Awaited', 'success');
+      onGroupSent();
+    } catch (err) {
+      toast(err.message || 'Failed to send to WhatsApp group', 'error');
+    } finally {
+      setSending(false);
+    }
+  }
+
   const parts = [
     compose.fresh.length && `${compose.fresh.length} new request${compose.fresh.length > 1 ? 's' : ''}`,
     compose.awaited.length && `${compose.awaited.length} reminder${compose.awaited.length > 1 ? 's' : ''}`,
@@ -648,10 +666,18 @@ function ComposeModal({ compose, setCompose, phone, onConfirm }) {
         <div className="flex gap-2">
           <Btn kind="ghost" onClick={() => setCompose(null)}>Cancel</Btn>
           <Btn kind="ghost" onClick={() => onConfirm(false)} title="Record this as sent without opening WhatsApp">Mark as sent</Btn>
-          <Btn onClick={() => onConfirm(true)} disabled={!phone}>Open WhatsApp</Btn>
+          <Btn kind="ghost" onClick={() => onConfirm(true)} disabled={!phone}>Open WhatsApp</Btn>
+          <Btn
+            onClick={sendToGroup}
+            disabled={!waGroupId || sending}
+            title={waGroupId ? 'Send directly to the linked WhatsApp group' : 'No WA group linked to this engagement'}
+          >
+            {sending ? 'Sending…' : 'Send to group'}
+          </Btn>
         </div>
       </div>
-      {!phone && <p className="text-xs text-deep mt-2 text-right">No WhatsApp number on file — add one on the Clients page, or use Mark as sent.</p>}
+      {!waGroupId && <p className="text-xs text-deep mt-2 text-right">No WA group linked — add a group ID on this engagement to send directly.</p>}
+      {!phone && waGroupId && <p className="text-xs text-slate-400 mt-2 text-right">No phone number on file — use "Send to group" or copy the text.</p>}
     </Modal>
   );
 }
@@ -1155,7 +1181,17 @@ export default function EngagementDetail() {
       )}
 
       {scoping && <ScopePanel orderedHeads={libraryHeads} setHeadIncluded={setHeadIncluded} updateItem={updateItem} onClose={() => setScoping(false)} engagementId={id} onReload={load} />}
-      {compose && <ComposeModal compose={compose} setCompose={setCompose} phone={phone} onConfirm={confirmSend} />}
+      {compose && (
+        <ComposeModal
+          compose={compose}
+          setCompose={setCompose}
+          phone={phone}
+          waGroupId={engagement?.waGroupId || ''}
+          engagementId={id}
+          onConfirm={confirmSend}
+          onGroupSent={() => { setCompose(null); stopSelect(); load(); }}
+        />
+      )}
       {filesOpen && (
         <FilesModal
           engagementId={id} files={files} heads={includedHeads} onClose={() => setFilesOpen(false)}

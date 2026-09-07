@@ -1,0 +1,119 @@
+{
+  "name": "HFS CRM — Receive WA File",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "hfs-receive-wa-file",
+        "options": {}
+      },
+      "name": "Evolution API Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "notes": "Configure this URL in Evolution API as the webhook for MESSAGES_UPSERT events on your instance."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.body.data?.messageType }}",
+              "operation": "regex",
+              "value2": "documentMessage|imageMessage|audioMessage|videoMessage|stickerMessage|pttMessage"
+            }
+          ]
+        }
+      },
+      "name": "Filter: Media Only",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "notes": "Only forward messages that contain a downloadable file. Text/reaction/status events are dropped."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.body.data?.key?.remoteJid }}",
+              "operation": "endsWith",
+              "value2": "@g.us"
+            }
+          ]
+        }
+      },
+      "name": "Filter: Groups Only",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 200],
+      "notes": "Only process messages from group chats (remoteJid ends with @g.us). Individual DMs are ignored."
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.CRM_BACKEND_URL }}/api/webhooks/inbound-file",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-webhook-secret", "value": "={{ $env.WEBHOOK_SECRET }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "groupId", "value": "={{ $json.body.data.key.remoteJid }}" },
+            { "name": "sender", "value": "={{ $json.body.data.key.participant || $json.body.data.key.remoteJid }}" },
+            { "name": "messageId", "value": "={{ $json.body.data.key.id }}" },
+            { "name": "fileName", "value": "={{ $json.body.data.message?.documentMessage?.fileName || $json.body.data.message?.imageMessage?.caption || ($json.body.data.messageType + '_' + $json.body.data.key.id) }}" },
+            { "name": "fileUrl", "value": "={{ $json.body.data.message?.documentMessage?.url || $json.body.data.message?.imageMessage?.url || $json.body.data.message?.videoMessage?.url || $json.body.data.message?.audioMessage?.url }}" },
+            { "name": "mimeType", "value": "={{ $json.body.data.message?.documentMessage?.mimetype || $json.body.data.message?.imageMessage?.mimetype || $json.body.data.message?.videoMessage?.mimetype || 'application/octet-stream' }}" }
+          ]
+        },
+        "options": { "timeout": 30000 }
+      },
+      "name": "POST to CRM Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [850, 100],
+      "notes": "Sends file metadata to the CRM backend. The backend downloads from fileUrl, stores in MinIO, and inserts an inbox_files row."
+    },
+    {
+      "parameters": {
+        "errorMessage": "CRM webhook returned an error — check execution log"
+      },
+      "name": "Log Error",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1050, 200],
+      "notes": "No retry loop — the CRM webhook is idempotent (dedup by messageId). If it fails, review logs."
+    }
+  ],
+  "connections": {
+    "Evolution API Webhook": { "main": [[{ "node": "Filter: Media Only", "type": "main", "index": 0 }]] },
+    "Filter: Media Only": {
+      "main": [
+        [{ "node": "Filter: Groups Only", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Filter: Groups Only": {
+      "main": [
+        [{ "node": "POST to CRM Webhook", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "POST to CRM Webhook": {
+      "main": [[], [{ "node": "Log Error", "type": "main", "index": 0 }]]
+    }
+  },
+  "_meta": {
+    "templateCredsSetupCompleted": false,
+    "notes": [
+      "Required env vars in n8n: CRM_BACKEND_URL (e.g. https://your-crm.railway.app), WEBHOOK_SECRET",
+      "In Evolution API: set this workflow's webhook URL for event MESSAGES_UPSERT on your instance",
+      "Evolution API delivers ALL group messages from ALL monitored groups — the CRM resolves the right engagement by groupId",
+      "Files from groups not linked to any engagement are stored in unmatched_inbox for manual review"
+    ]
+  }
+}

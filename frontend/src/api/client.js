@@ -77,6 +77,7 @@ export const api = {
     update: (id, data) => request('PATCH', `/engagements/${id}`, data).then(r => r?.engagement ?? r),
     delete: (id) => request('DELETE', `/engagements/${id}`),
     rollForward: (id) => request('POST', `/engagements/${id}/roll-forward`).then(r => r?.engagement ?? r),
+    sendWhatsapp: (id, data) => request('POST', `/engagements/${id}/whatsapp-message`, data),
   },
   items: {
     list: (engagementId) => request('GET', `/items?engagementId=${engagementId}`).then(r => r?.items ?? r),

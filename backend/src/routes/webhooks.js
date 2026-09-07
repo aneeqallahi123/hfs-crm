@@ -12,20 +12,38 @@ function webhookAuth(req, res, next) {
   next();
 }
 
+const MAX_FILE_BYTES = parseInt(process.env.MAX_INBOX_FILE_MB || '50', 10) * 1024 * 1024;
+
 // POST /api/webhooks/inbound-file
 // Called by n8n when Evolution API receives a WhatsApp file
 router.post('/inbound-file', webhookAuth, async (req, res) => {
   const { engagementId, groupId, sender, messageId, fileName, fileUrl, mimeType } = req.body;
 
   try {
+    // Dedup: skip if this messageId was already stored
+    if (messageId) {
+      const { rows: dup } = await pool.query(
+        'SELECT id FROM inbox_files WHERE message_id = $1 LIMIT 1',
+        [messageId]
+      );
+      if (dup[0]) return res.json({ received: true, duplicate: true });
+    }
+
     // Download file from WhatsApp CDN
     const fileRes = await fetch(fileUrl);
     if (!fileRes.ok) throw new Error(`Failed to download file: ${fileRes.status}`);
     const buffer = Buffer.from(await fileRes.arrayBuffer());
 
-    // Try to resolve engagementId from groupId if not provided
-    let resolvedEngagementId = engagementId;
-    let matched = false;
+    // File size guard
+    if (buffer.length > MAX_FILE_BYTES) {
+      return res.status(413).json({
+        error: `File exceeds limit (${Math.round(buffer.length / 1024 / 1024)}MB > ${MAX_INBOX_FILE_MB || 50}MB)`,
+      });
+    }
+
+    // Resolve engagementId from groupId if not provided
+    let resolvedEngagementId = engagementId || null;
+    let matched = !!engagementId;
 
     if (!resolvedEngagementId && groupId) {
       const { rows } = await pool.query(
@@ -36,27 +54,32 @@ router.post('/inbound-file', webhookAuth, async (req, res) => {
         resolvedEngagementId = rows[0].id;
         matched = true;
       }
-    } else if (resolvedEngagementId) {
-      matched = true;
     }
 
-    if (!resolvedEngagementId) {
-      // Store without engagement link — inbox_files requires engagement_id NOT NULL
-      // Return early; n8n can retry once group is mapped
-      return res.json({ received: true, matched: false, reason: 'No engagement mapped to group' });
-    }
-
-    const minioKey = await uploadFile(resolvedEngagementId, fileName, buffer, mimeType || 'application/octet-stream');
+    // Upload to MinIO — use a placeholder engagement id for unmatched files
+    const storageId = resolvedEngagementId || 'unmatched';
+    const minioKey = await uploadFile(storageId, fileName, buffer, mimeType || 'application/octet-stream');
     const now = new Date().toISOString();
 
-    await pool.query(
-      `INSERT INTO inbox_files
-         (engagement_id, name, size, mime_type, minio_key, received_at, uploaded_at,
-          source, sender, message_id, group_id, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $6, 'whatsapp', $7, $8, $9, 'Unmatched')`,
-      [resolvedEngagementId, fileName, buffer.length, mimeType || '', minioKey,
-       now, sender || '', messageId || '', groupId || '']
-    );
+    if (resolvedEngagementId) {
+      await pool.query(
+        `INSERT INTO inbox_files
+           (engagement_id, name, size, mime_type, minio_key, received_at, uploaded_at,
+            source, sender, message_id, group_id, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $6, 'whatsapp', $7, $8, $9, 'Unmatched')`,
+        [resolvedEngagementId, fileName, buffer.length, mimeType || '', minioKey,
+         now, sender || '', messageId || '', groupId || '']
+      );
+    } else {
+      // Unknown group — store in unmatched_inbox so files aren't silently dropped
+      await pool.query(
+        `INSERT INTO unmatched_inbox
+           (group_id, sender, message_id, name, size, mime_type, minio_key, received_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [groupId || '', sender || '', messageId || '', fileName,
+         buffer.length, mimeType || '', minioKey, now]
+      );
+    }
 
     res.json({ received: true, matched });
   } catch (err) {
