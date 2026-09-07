@@ -220,7 +220,11 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
           </span>
         </span>
         {tier && !selectMode && <span className={`text-[10px] tabular-nums shrink-0 ${TIER_STYLE[tier].text}`} title="Days since last progress">{ageLabel(noProgressDays(it))}</span>}
-        {it.owner && <span className="text-[10px] text-slate-500 bg-fog px-2 py-0.5 rounded shrink-0 max-w-[6rem] truncate" title={it.owner}>{it.owner.split(' ')[0]}</span>}
+        {canEdit
+          ? <OwnerSelect value={it.owner} team={team} onChange={(v) => onChange({ owner: v })} />
+          : it.owner
+            ? <span className="text-[10px] text-slate-500 bg-fog px-2 py-0.5 rounded shrink-0 max-w-[6rem] truncate" title={it.owner}>{it.owner.split(' ')[0]}</span>
+            : null}
         {canEdit ? <StatusSelect it={it} onChange={(v) => onChange(withStatus(it, v))} /> : (
           <span className={`text-[11px] rounded-full border px-2.5 py-0.5 shrink-0 ${statusStyle(it)}`}>{statusLabel(it)}</span>
         )}
@@ -285,10 +289,11 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
               </div>
             </div>
             <div className="text-xs text-slate-500">
-              Assignee
+              Ad Hoc Assignee
+              <div className="text-[10px] text-slate-400 mb-1">Override for this task only</div>
               {canEdit
-                ? <div className="mt-1"><OwnerSelect value={it.owner} team={team} onChange={(v) => onChange({ owner: v })} /></div>
-                : <div className="mt-0.5 text-xs text-ink">{it.owner || '—'}</div>}
+                ? <OwnerSelect value={it.adHocOwner || ''} team={team} onChange={(v) => onChange({ adHocOwner: v })} />
+                : <div className="mt-0.5 text-xs text-ink">{it.adHocOwner || '—'}</div>}
             </div>
           </div>
 

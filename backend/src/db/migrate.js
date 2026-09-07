@@ -115,6 +115,9 @@ export async function runMigrations() {
   // Add per-file note column to inbox_files
   await pool.query(`ALTER TABLE inbox_files ADD COLUMN IF NOT EXISTS note TEXT NOT NULL DEFAULT ''`);
 
+  // Add ad-hoc (secondary) assignee to items
+  await pool.query(`ALTER TABLE items ADD COLUMN IF NOT EXISTS ad_hoc_owner TEXT NOT NULL DEFAULT ''`);
+
   // Seed audit library if empty
   const { rows: existing } = await pool.query(
     `SELECT COUNT(*) AS cnt FROM library_heads WHERE module = 'audit'`

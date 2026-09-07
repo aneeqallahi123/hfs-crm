@@ -32,6 +32,7 @@ function toItem(row) {
     remarks: row.remarks,
     adhoc: row.adhoc,
     due: row.due,
+    adHocOwner: row.ad_hoc_owner || '',
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -79,7 +80,7 @@ router.patch('/bulk', async (req, res) => {
 
     for (const { id, ...fields } of updates) {
       const colMap = {
-        status: 'status', statusSince: 'status_since', owner: 'owner',
+        status: 'status', statusSince: 'status_since', owner: 'owner', adHocOwner: 'ad_hoc_owner',
         fileNote: 'file_note', remarks: 'remarks', headIncluded: 'head_included',
       };
       const cols = [];
@@ -112,13 +113,14 @@ router.patch('/bulk', async (req, res) => {
 // PATCH /api/items/:id
 router.patch('/:id', async (req, res) => {
   const allowed = [
-    'status', 'statusSince', 'peak', 'owner', 'fileNote', 'dateRequested',
+    'status', 'statusSince', 'peak', 'owner', 'adHocOwner', 'fileNote', 'dateRequested',
     'dateReceived', 'queried', 'dateQueried', 'followups', 'lastContact',
     'remarks', 'due', 'value', 'requestable', 'headIncluded', 'ref', 'section', 'sub', 'p'
   ];
 
   const colMap = {
     status: 'status', statusSince: 'status_since', peak: 'peak', owner: 'owner',
+    adHocOwner: 'ad_hoc_owner',
     fileNote: 'file_note', dateRequested: 'date_requested', dateReceived: 'date_received',
     queried: 'queried', dateQueried: 'date_queried', followups: 'followups',
     lastContact: 'last_contact', remarks: 'remarks', due: 'due', value: 'value',
