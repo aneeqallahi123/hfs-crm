@@ -72,11 +72,11 @@
     },
     {
       "parameters": {
-        "url": "={{ $env.CRM_BACKEND_URL }}/api/webhooks/inbound-file",
+        "url": "=https://hfs-crm-production.up.railway.app/api/webhooks/inbound-file",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "x-webhook-secret", "value": "={{ $env.WEBHOOK_SECRET }}" },
+            { "name": "x-webhook-secret", "value": "WEBHOOK_SECRET_HERE" },
             { "name": "Content-Type", "value": "application/json" }
           ]
         },
