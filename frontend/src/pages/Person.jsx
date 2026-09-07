@@ -50,6 +50,10 @@ export default function Person() {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState('week');
+  const [editingCreds, setEditingCreds] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [newUsername, setNewUsername] = useState('');
   const td = today();
 
   async function load() {
@@ -82,6 +86,23 @@ export default function Person() {
     try {
       await api.team.update(person.id, { name: nm });
       navigate(`/team/${encodeURIComponent(nm)}`);
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  }
+
+  async function saveCreds() {
+    if (!person) return;
+    if (newPassword && newPassword !== confirmPassword) { toast('Passwords do not match', 'error'); return; }
+    const updates = {};
+    if (newUsername.trim() && newUsername.trim() !== person.username) updates.username = newUsername.trim().toLowerCase();
+    if (newPassword) updates.password = newPassword;
+    if (!Object.keys(updates).length) { setEditingCreds(false); return; }
+    try {
+      await api.team.update(person.id, updates);
+      toast('Login credentials updated', 'success');
+      setEditingCreds(false); setNewPassword(''); setConfirmPassword(''); setNewUsername('');
+      load();
     } catch (err) {
       toast(err.message, 'error');
     }
@@ -181,6 +202,50 @@ export default function Person() {
         <Stat label="Flagged" value={flagged} />
         <Stat label="Oldest, days" value={oldest} />
         <Stat label="Active days / 30" value={activeDays} />
+      </div>
+
+      <div className="bg-paper border border-tint rounded-xl p-5 mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-serif text-lg font-medium text-ink">Login credentials</h2>
+          {!editingCreds && (
+            <button onClick={() => { setEditingCreds(true); setNewUsername(person?.username || ''); }} className="text-xs px-3 py-1.5 rounded-md border border-tint bg-fog hover:bg-paper text-slate-600 transition-colors">Edit</button>
+          )}
+        </div>
+        {!editingCreds ? (
+          <div className="flex items-center gap-6">
+            <div>
+              <div className="text-xs text-slate-400 mb-0.5">Username</div>
+              <div className="text-sm font-mono text-ink">{person?.username || <span className="text-slate-400 italic">not set</span>}</div>
+            </div>
+            <div>
+              <div className="text-xs text-slate-400 mb-0.5">Password</div>
+              <div className="text-sm text-slate-400">••••••••</div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <div className="flex gap-3">
+              <label className="flex-1 text-xs font-medium text-slate-500">
+                Username
+                <input value={newUsername} onChange={(e) => setNewUsername(e.target.value)} className="w-full mt-1 border border-tint rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-green" />
+              </label>
+            </div>
+            <div className="flex gap-3">
+              <label className="flex-1 text-xs font-medium text-slate-500">
+                New password <span className="font-normal text-slate-400">(leave blank to keep current)</span>
+                <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Enter new password" className="w-full mt-1 border border-tint rounded-md px-3 py-2 text-sm focus:outline-none focus:border-green" />
+              </label>
+              <label className="flex-1 text-xs font-medium text-slate-500">
+                Confirm password
+                <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Repeat new password" className="w-full mt-1 border border-tint rounded-md px-3 py-2 text-sm focus:outline-none focus:border-green" />
+              </label>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={saveCreds} className="text-sm px-4 py-2 rounded-md font-medium bg-green text-paper hover:bg-deep transition-colors">Save</button>
+              <button onClick={() => { setEditingCreds(false); setNewPassword(''); setConfirmPassword(''); setNewUsername(''); }} className="text-sm px-4 py-2 rounded-md font-medium text-ink bg-paper hover:bg-fog border border-tint transition-colors">Cancel</button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex items-center justify-between mb-3">
