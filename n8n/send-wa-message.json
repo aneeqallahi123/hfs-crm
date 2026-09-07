@@ -19,7 +19,7 @@
         "conditions": {
           "string": [
             {
-              "value1": "={{ $request.headers['x-webhook-secret'] }}",
+              "value1": "={{ $json.headers['x-webhook-secret'] }}",
               "value2": "={{ $env.WEBHOOK_SECRET }}"
             }
           ]
