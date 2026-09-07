@@ -100,16 +100,9 @@ export const api = {
       credentials: 'include',
       body: formData,
     }).then(r => r.json()),
-    open: async (fileId) => {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/documents/${fileId}/download`, {
-        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
-        credentials: 'include',
-      });
-      if (!res.ok) throw new Error(`Failed to load file (${res.status})`);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      window.open(url, '_blank');
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    open: (fileId) => {
+      const token = accessToken ? `?token=${encodeURIComponent(accessToken)}` : '';
+      window.open(`${import.meta.env.VITE_API_URL}/documents/${fileId}/download${token}`, '_blank');
     },
     delete: (fileId) => request('DELETE', `/documents/${fileId}`),
   },

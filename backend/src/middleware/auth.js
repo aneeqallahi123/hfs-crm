@@ -2,10 +2,11 @@ import jwt from 'jsonwebtoken';
 
 export function verifyToken(req, res, next) {
   const header = req.headers.authorization;
-  if (!header?.startsWith('Bearer ')) {
+  // Also accept ?token= query param for direct browser navigation (e.g. file downloads)
+  const token = header?.startsWith('Bearer ') ? header.slice(7) : req.query.token;
+  if (!token) {
     return res.status(401).json({ error: 'No token provided' });
   }
-  const token = header.slice(7);
   try {
     req.user = jwt.verify(token, process.env.JWT_SECRET);
     next();
