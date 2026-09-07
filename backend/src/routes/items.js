@@ -115,7 +115,7 @@ router.patch('/:id', async (req, res) => {
   const allowed = [
     'status', 'statusSince', 'peak', 'owner', 'adHocOwner', 'fileNote', 'dateRequested',
     'dateReceived', 'queried', 'dateQueried', 'followups', 'lastContact',
-    'remarks', 'due', 'value', 'requestable', 'headIncluded', 'ref', 'section', 'sub', 'p'
+    'remarks', 'due', 'value', 'kind', 'requestable', 'headIncluded', 'ref', 'section', 'sub', 'p'
   ];
 
   const colMap = {
@@ -123,7 +123,7 @@ router.patch('/:id', async (req, res) => {
     adHocOwner: 'ad_hoc_owner',
     fileNote: 'file_note', dateRequested: 'date_requested', dateReceived: 'date_received',
     queried: 'queried', dateQueried: 'date_queried', followups: 'followups',
-    lastContact: 'last_contact', remarks: 'remarks', due: 'due', value: 'value',
+    lastContact: 'last_contact', remarks: 'remarks', due: 'due', value: 'value', kind: 'kind',
     requestable: 'requestable', headIncluded: 'head_included', ref: 'ref',
     section: 'section', sub: 'sub', p: 'p',
   };

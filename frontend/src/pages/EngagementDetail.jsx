@@ -112,6 +112,11 @@ function FileRow({ file, canEdit, downloading, removing, onOpen, onRemove, onNot
   );
 }
 
+function parseValues(raw) {
+  if (!raw) return [''];
+  try { const a = JSON.parse(raw); return Array.isArray(a) && a.length ? a : [raw]; } catch { return [raw]; }
+}
+
 // ---- Item row ----
 function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, selected, onToggleSel, onRemove, itemFiles = [], onFileUploaded, onFileRemoved }) {
   const [open, setOpen] = useState(false);
@@ -120,13 +125,23 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
   const [downloading, setDownloading] = useState(null);
   const [removing, setRemoving] = useState(null);
   const fileInputRef = React.useRef(null);
+  const kind = it.kind || 'document';
+  const isTextType = kind === 'number' || kind === 'information';
+  const [textVals, setTextVals] = useState(() => parseValues(it.value));
+  React.useEffect(() => { setTextVals(parseValues(it.value)); }, [it.value]);
+
+  async function saveTextVals(vals) {
+    const cleaned = vals.map((v) => v.trim()).filter(Boolean);
+    const json = cleaned.length ? JSON.stringify(cleaned) : '';
+    await onChange({ value: json });
+  }
 
   const tier = progressTier(it);
   const edge = it.status === 'NA' ? 'border-transparent' : tier ? { watch: 'border-tint', flag: 'border-green', urgent: 'border-deep' }[tier] : it.status === 'Completed' ? 'border-tint' : 'border-transparent';
   const isDone = it.status === 'Completed';
   const overdue = it.due && it.due < today() && !isDone && it.status !== 'NA';
   const fileCount = itemFiles.length;
-  const hasFiles = fileCount > 0;
+  const hasFiles = isTextType ? textVals.some((v) => v.trim()) : fileCount > 0;
 
   async function uploadFile(file) {
     setUploading(true);
@@ -234,36 +249,70 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
       {open && (
         <div className="mt-2 pb-1 space-y-3" style={{ paddingLeft: '3.75rem' }}>
 
-          {/* ── Files ─────────────────────────────────────────────── */}
-          <div className="space-y-1.5">
-            {itemFiles.map((f) => (
-              <FileRow
-                key={f.id}
-                file={f}
-                canEdit={canEdit}
-                downloading={downloading === f.id}
-                removing={removing === f.id}
-                onOpen={() => openFile(f.id)}
-                onRemove={() => removeAttachedFile(f.id)}
-                onNoteChange={(note) => {
-                  if (onFileUploaded) onFileUploaded({ ...f, note });
-                  if (onFileRemoved) onFileRemoved(f.id);
-                }}
-              />
-            ))}
-
-            {/* Upload trigger */}
-            {canEdit && (
-              <label className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-dashed text-xs cursor-pointer transition-colors ${uploading ? 'border-tint text-slate-400 cursor-wait' : 'border-tint text-slate-400 hover:border-green hover:text-green'}`}>
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
-                </svg>
-                {uploading ? 'Uploading…' : hasFiles ? 'Add another file' : 'Upload a file'}
-                <input ref={fileInputRef} type="file" className="hidden" disabled={uploading} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(f); }} />
-              </label>
-            )}
-            {!hasFiles && !canEdit && <div className="text-xs text-slate-400">No files attached</div>}
-          </div>
+          {/* ── Files or text values ──────────────────────────────── */}
+          {isTextType ? (
+            <div className="space-y-1.5">
+              {textVals.map((v, idx) => (
+                <div key={idx} className="flex items-center gap-1.5">
+                  {canEdit ? (
+                    <input
+                      type={kind === 'number' ? 'text' : 'text'}
+                      inputMode={kind === 'number' ? 'decimal' : 'text'}
+                      value={v}
+                      onChange={(e) => { const n = [...textVals]; n[idx] = e.target.value; setTextVals(n); }}
+                      onBlur={() => saveTextVals(textVals)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                      placeholder={kind === 'number' ? 'Enter value…' : 'Enter information…'}
+                      className="flex-1 border border-tint rounded px-2.5 py-1.5 text-xs text-ink bg-paper focus:outline-none focus:border-green placeholder-slate-300"
+                    />
+                  ) : (
+                    <div className="flex-1 px-2.5 py-1.5 text-xs text-ink bg-fog rounded border border-tint">{v || '—'}</div>
+                  )}
+                  {canEdit && textVals.length > 1 && (
+                    <button
+                      onClick={() => { const n = textVals.filter((_, i) => i !== idx); setTextVals(n); saveTextVals(n); }}
+                      className="text-slate-300 hover:text-deep text-xs w-5 shrink-0"
+                      title="Remove this entry"
+                    >✕</button>
+                  )}
+                </div>
+              ))}
+              {canEdit && (
+                <button
+                  onClick={() => setTextVals([...textVals, ''])}
+                  className="text-xs text-green hover:underline underline-offset-2"
+                >+ Add another value</button>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {itemFiles.map((f) => (
+                <FileRow
+                  key={f.id}
+                  file={f}
+                  canEdit={canEdit}
+                  downloading={downloading === f.id}
+                  removing={removing === f.id}
+                  onOpen={() => openFile(f.id)}
+                  onRemove={() => removeAttachedFile(f.id)}
+                  onNoteChange={(note) => {
+                    if (onFileUploaded) onFileUploaded({ ...f, note });
+                    if (onFileRemoved) onFileRemoved(f.id);
+                  }}
+                />
+              ))}
+              {canEdit && (
+                <label className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-dashed text-xs cursor-pointer transition-colors ${uploading ? 'border-tint text-slate-400 cursor-wait' : 'border-tint text-slate-400 hover:border-green hover:text-green'}`}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
+                  </svg>
+                  {uploading ? 'Uploading…' : fileCount > 0 ? 'Add another file' : 'Upload a file'}
+                  <input ref={fileInputRef} type="file" className="hidden" disabled={uploading} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(f); }} />
+                </label>
+              )}
+              {fileCount === 0 && !canEdit && <div className="text-xs text-slate-400">No files attached</div>}
+            </div>
+          )}
 
           {/* ── Task-level fields ─────────────────────────────────── */}
           <div className="grid grid-cols-3 gap-2">
@@ -289,11 +338,26 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
               </div>
             </div>
             <div className="text-xs text-slate-500">
-              Ad Hoc Assignee
-              <div className="text-[10px] text-slate-400 mb-1">Override for this task only</div>
-              {canEdit
-                ? <OwnerSelect value={it.adHocOwner || ''} team={team} onChange={(v) => onChange({ adHocOwner: v })} />
-                : <div className="mt-0.5 text-xs text-ink">{it.adHocOwner || '—'}</div>}
+              {canEdit ? (
+                <>
+                  Type
+                  <div className="text-[10px] text-slate-400 mb-1">Override for this engagement</div>
+                  <select
+                    value={kind}
+                    onChange={(e) => onChange({ kind: e.target.value })}
+                    className="text-xs border border-tint rounded px-2 py-1 bg-paper focus:outline-none focus:border-green"
+                  >
+                    <option value="document">Document</option>
+                    <option value="number">Number</option>
+                    <option value="information">Information</option>
+                  </select>
+                </>
+              ) : (
+                <>
+                  Type
+                  <div className="mt-0.5 text-xs text-ink capitalize">{kind}</div>
+                </>
+              )}
             </div>
           </div>
 
