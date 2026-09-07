@@ -220,7 +220,11 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
           </span>
         </span>
         {tier && !selectMode && <span className={`text-[10px] tabular-nums shrink-0 ${TIER_STYLE[tier].text}`} title="Days since last progress">{ageLabel(noProgressDays(it))}</span>}
-        {it.status !== 'NA' && canEdit && <OwnerSelect value={it.owner} team={team} onChange={(v) => onChange({ owner: v })} />}
+        {canEdit
+          ? <OwnerSelect value={it.owner} team={team} onChange={(v) => onChange({ owner: v })} />
+          : it.owner
+            ? <span className="text-[10px] text-slate-500 bg-fog px-2 py-0.5 rounded shrink-0 max-w-[6rem] truncate" title={it.owner}>{it.owner.split(' ')[0]}</span>
+            : null}
         {canEdit ? <StatusSelect it={it} onChange={(v) => onChange(withStatus(it, v))} /> : (
           <span className={`text-[11px] rounded-full border px-2.5 py-0.5 shrink-0 ${statusStyle(it)}`}>{statusLabel(it)}</span>
         )}
@@ -262,7 +266,7 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
           </div>
 
           {/* ── Task-level fields ─────────────────────────────────── */}
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <label className="text-xs text-slate-500">
               Remarks
               {canEdit
@@ -283,6 +287,13 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
                   className={`px-3 py-1 border-l border-tint transition-colors ${!it.requestable ? 'bg-deep text-paper font-medium' : 'text-slate-500 hover:bg-fog disabled:cursor-default'}`}
                 >Team</button>
               </div>
+            </div>
+            <div className="text-xs text-slate-500">
+              Ad Hoc Assignee
+              <div className="text-[10px] text-slate-400 mb-1">Override for this task only</div>
+              {canEdit
+                ? <OwnerSelect value={it.adHocOwner || ''} team={team} onChange={(v) => onChange({ adHocOwner: v })} />
+                : <div className="mt-0.5 text-xs text-ink">{it.adHocOwner || '—'}</div>}
             </div>
           </div>
 
@@ -682,13 +693,14 @@ function ComposeModal({ compose, setCompose, phone, waGroupId, engagementId, onC
   );
 }
 
-function FilesModal({ engagementId, files, heads, onClose, onAdd, onMatch, onUnmatch, onRemove, canDelete }) {
-  const unmatched = files.filter((f) => !f.assignedItemId);
+function FilesModal({ engagementId, files, heads, onClose, onAdd, onMatch, onUnmatch, onRemove, canDelete, onMarkIrrelevant }) {
+  const unmatched = files.filter((f) => !f.assignedItemId && f.status !== 'Irrelevant');
   const matched = files.filter((f) => f.assignedItemId);
+  const irrelevant = files.filter((f) => f.status === 'Irrelevant');
   const [cur, setCur] = useState(unmatched[0]?.id || null);
   const [q, setQ] = useState('');
-  const [showMatched, setShowMatched] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [collapsedMatchedHeads, setCollapsedMatchedHeads] = useState({});
   const unmatchedKey = unmatched.map((f) => f.id).join(',');
   useEffect(() => { if (!unmatched.some((f) => f.id === cur)) setCur(unmatched[0]?.id || null); }, [unmatchedKey]);
 
@@ -697,6 +709,20 @@ function FilesModal({ engagementId, files, heads, onClose, onAdd, onMatch, onUnm
   const ql = q.trim().toLowerCase();
   const targets = heads.flatMap((h) => h.items.filter((it) => it.status !== 'NA' && (!ql || it.p.toLowerCase().includes(ql) || h.sub.toLowerCase().includes(ql))).map((it) => ({ it, h })));
   const curFile = unmatched.find((f) => f.id === cur);
+
+  // Group matched files by their head (section/sub-category)
+  const matchedGroups = (() => {
+    const groups = {};
+    for (const f of matched) {
+      const it = itemById[f.assignedItemId];
+      if (!it) continue;
+      const h = heads.find(hd => hd.items.some(i => i.id === f.assignedItemId));
+      if (!h) continue;
+      if (!groups[h.headId]) groups[h.headId] = { head: h, entries: [] };
+      groups[h.headId].entries.push({ file: f, item: it });
+    }
+    return Object.values(groups);
+  })();
 
   async function openFile(f) {
     try { const { url } = await api.documents.downloadUrl(f.id); window.open(url, '_blank'); } catch {}
@@ -708,7 +734,7 @@ function FilesModal({ engagementId, files, heads, onClose, onAdd, onMatch, onUnm
   }
 
   return (
-    <Modal title="Files" onClose={onClose} wide>
+    <Modal title="Documents" onClose={onClose} wide>
       <div className="flex items-start justify-between gap-4 mb-3">
         <p className="text-xs text-slate-600 max-w-lg">Everything the client sends lands here. Pick a file on the left, then the task it belongs to on the right; the task moves to <span className="font-medium text-ink">To review</span>.</p>
         <label className="cursor-pointer shrink-0">
@@ -716,6 +742,8 @@ function FilesModal({ engagementId, files, heads, onClose, onAdd, onMatch, onUnm
           <input type="file" multiple className="hidden" disabled={uploading} onChange={(e) => { if (e.target.files?.length) handleAdd(e.target.files); e.target.value = ''; }} />
         </label>
       </div>
+
+      {/* Unmatched + task matcher */}
       <div className="grid md:grid-cols-5 gap-4">
         <div className="md:col-span-2">
           <div className="text-xs font-medium text-slate-600 mb-1">Unmatched <span className="font-mono text-slate-400">{unmatched.length}</span></div>
@@ -734,7 +762,21 @@ function FilesModal({ engagementId, files, heads, onClose, onAdd, onMatch, onUnm
           {curFile && (
             <div className="mt-2 flex gap-3 text-xs">
               <button onClick={() => openFile(curFile)} className="text-green hover:underline underline-offset-2">Open</button>
+              {onMarkIrrelevant && <button onClick={() => onMarkIrrelevant(curFile.id, true)} className="text-slate-400 hover:text-slate-600">Not relevant</button>}
               {canDelete && <button onClick={() => { if (confirm('Delete this file?')) onRemove(curFile.id); }} className="text-slate-400 hover:text-deep">Delete</button>}
+            </div>
+          )}
+          {irrelevant.length > 0 && (
+            <div className="mt-3">
+              <div className="text-[10px] text-slate-400 mb-1">Not relevant ({irrelevant.length})</div>
+              <div className="space-y-0.5">
+                {irrelevant.map((f) => (
+                  <div key={f.id} className="flex items-center gap-2 text-xs text-slate-400 px-1">
+                    <span className="truncate flex-1 line-through" title={f.name}>{f.name}</span>
+                    {onMarkIrrelevant && <button onClick={() => onMarkIrrelevant(f.id, false)} className="text-green hover:underline shrink-0 text-[10px]">Restore</button>}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -759,23 +801,45 @@ function FilesModal({ engagementId, files, heads, onClose, onAdd, onMatch, onUnm
             )}
         </div>
       </div>
+
+      {/* Matched files — grouped by section/sub, collapsed by default */}
       {matched.length > 0 && (
-        <div className="mt-4">
-          <button onClick={() => setShowMatched(!showMatched)} className="text-xs text-slate-500 hover:text-ink">{showMatched ? 'Hide' : 'Show'} matched files ({matched.length})</button>
-          {showMatched && (
-            <div className="mt-2 border border-tint rounded-lg divide-y divide-tint/60 max-h-[30vh] overflow-y-auto">
-              {matched.map((f) => (
-                <div key={f.id} className="px-3 py-2 flex items-center gap-3">
-                  <button onClick={() => openFile(f)} className="text-sm text-ink hover:text-green hover:underline underline-offset-2 truncate flex-1 text-left" title={f.name}>{f.name}</button>
-                  <span className="text-xs text-green truncate max-w-[240px]" title={itemById[f.assignedItemId]?.p}>{itemById[f.assignedItemId]?.p || 'a task'}</span>
-                  <button onClick={() => onUnmatch(f.id)} className="text-xs text-slate-400 hover:text-ink shrink-0">Unmatch</button>
-                  {canDelete && <button onClick={() => { if (confirm('Delete this file?')) onRemove(f.id); }} className="text-xs text-slate-400 hover:text-deep shrink-0">Delete</button>}
+        <div className="mt-5 border-t border-tint pt-4">
+          <div className="text-xs font-medium text-slate-600 mb-2">
+            Matched documents <span className="font-mono text-slate-400">{matched.length}</span>
+          </div>
+          <div className="space-y-1">
+            {matchedGroups.map(({ head, entries }) => {
+              const isCollapsed = collapsedMatchedHeads[head.headId] !== false;
+              return (
+                <div key={head.headId} className="border border-tint rounded-lg overflow-hidden">
+                  <button
+                    onClick={() => setCollapsedMatchedHeads(p => ({ ...p, [head.headId]: !isCollapsed }))}
+                    className="w-full flex items-center gap-2 px-3 py-2 bg-fog/40 hover:bg-fog text-left transition-colors"
+                  >
+                    <span className={`text-[10px] text-slate-400 transition-transform duration-150 ${isCollapsed ? '-rotate-90' : ''}`}>▾</span>
+                    <span className="text-xs font-medium text-ink flex-1 min-w-0 truncate">{head.sub}</span>
+                    <span className="text-[10px] text-slate-400 shrink-0">{entries.length} file{entries.length !== 1 ? 's' : ''}</span>
+                  </button>
+                  {!isCollapsed && (
+                    <div className="divide-y divide-tint/60 border-t border-tint">
+                      {entries.map(({ file: f, item: it }) => (
+                        <div key={f.id} className="px-3 py-2 flex items-center gap-3">
+                          <button onClick={() => openFile(f)} className="text-sm text-ink hover:text-green hover:underline underline-offset-2 truncate flex-1 text-left min-w-0" title={f.name}>{f.name}</button>
+                          <span className="text-xs text-slate-400 truncate max-w-[180px] shrink-0" title={it.p}>{it.p}</span>
+                          <button onClick={() => onUnmatch(f.id)} className="text-xs text-slate-400 hover:text-ink shrink-0">Unmatch</button>
+                          {canDelete && <button onClick={() => { if (confirm('Delete this file?')) onRemove(f.id); }} className="text-xs text-slate-400 hover:text-deep shrink-0">Delete</button>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              ))}
-            </div>
-          )}
+              );
+            })}
+          </div>
         </div>
       )}
+
       <div className="flex justify-end pt-4"><Btn onClick={onClose}>Done</Btn></div>
     </Modal>
   );
@@ -799,6 +863,7 @@ export default function EngagementDetail() {
   const [sel, setSel] = useState({});
   const [filesOpen, setFilesOpen] = useState(false);
   const [stageFilter, setStageFilter] = useState(null);
+  const [typeFilter, setTypeFilter] = useState('all'); // 'all' | 'client' | 'team'
   const [q, setQ] = useState('');
 
   const canEdit = user?.role === 'partner' || user?.role === 'manager' || (user?.role === 'student' && engagement?.incharge === user?.name);
@@ -847,6 +912,20 @@ export default function EngagementDetail() {
   async function commitEng(patch) {
     setEngagement((prev) => ({ ...prev, ...patch }));
     try { await api.engagements.update(id, patch); } catch (err) { toast(err.message, 'error'); load(); }
+  }
+
+  async function commitIncharge(name) {
+    await commitEng({ incharge: name });
+    if (name) {
+      const unassigned = items.filter(it => !it.owner);
+      if (unassigned.length > 0) {
+        setItems(prev => prev.map(it => it.owner ? it : { ...it, owner: name }));
+        try {
+          await api.items.bulkUpdate(unassigned.map(it => ({ id: it.id, owner: name })));
+          toast(`Assigned ${unassigned.length} task${unassigned.length !== 1 ? 's' : ''} to ${name}`, 'success');
+        } catch (err) { toast(err.message, 'error'); load(); }
+      }
+    }
   }
 
   async function setHeadIncluded(headId, val) {
@@ -935,8 +1014,12 @@ export default function EngagementDetail() {
 
   const ql = q.trim().toLowerCase();
   const visibleHeads = includedHeads
-    .map((h) => ({ ...h, items: h.items.filter((it) => (stageFilter === 'na' ? it.status === 'NA' : (!stageFilter || stageOf(it) === stageFilter)) && (!ql || it.p.toLowerCase().includes(ql) || (it.ref || '').toLowerCase().includes(ql) || (it.owner || '').toLowerCase().includes(ql))) }))
-    .filter((h) => h.items.length > 0 || (h.headId === 'adhoc' && !stageFilter && !ql));
+    .map((h) => ({ ...h, items: h.items.filter((it) =>
+      (stageFilter === 'na' ? it.status === 'NA' : (!stageFilter || stageOf(it) === stageFilter)) &&
+      (!ql || it.p.toLowerCase().includes(ql) || (it.ref || '').toLowerCase().includes(ql) || (it.owner || '').toLowerCase().includes(ql)) &&
+      (typeFilter === 'all' || (typeFilter === 'client' ? it.requestable : !it.requestable))
+    ) }))
+    .filter((h) => h.items.length > 0 || (h.headId === 'adhoc' && !stageFilter && !ql && typeFilter === 'all'));
 
   function startSelect(pick) {
     const n = {};
@@ -1020,7 +1103,7 @@ export default function EngagementDetail() {
               </label>
               <label className="flex items-center gap-1.5 text-xs text-slate-400">
                 In-charge
-                <select value={engagement.incharge || ''} disabled={!isPartnerManager} onChange={(e) => commitEng({ incharge: e.target.value })} className={`text-xs rounded-full border px-2 py-0.5 bg-paper focus:outline-none focus:border-green ${engagement.incharge ? 'text-ink border-tint' : 'text-slate-400 border-green'}`}>
+                <select value={engagement.incharge || ''} disabled={!isPartnerManager} onChange={(e) => commitIncharge(e.target.value)} className={`text-xs rounded-full border px-2 py-0.5 bg-paper focus:outline-none focus:border-green ${engagement.incharge ? 'text-ink border-tint' : 'text-slate-400 border-green'}`}>
                   <option value="">Unassigned</option>
                   {team.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
                 </select>
@@ -1054,38 +1137,110 @@ export default function EngagementDetail() {
         })}
       </div>
 
-      <div className="mb-5 flex items-center gap-3 flex-wrap text-sm">
-        <span className="text-ink">
-          <span className="text-slate-500">Next:</span>{' '}
-          {nextStep.action && isPartnerManager
-            ? <button onClick={() => doNext(nextStep.action)} className="text-left text-ink hover:text-green underline decoration-tint underline-offset-4">{nextStep.text}</button>
-            : nextStep.text}
-        </span>
-        {stageFilter && <button onClick={() => setStageFilter(null)} className="text-xs text-green hover:underline underline-offset-2">Show all</button>}
-        {naCount > 0 && stageFilter !== 'na' && <button onClick={() => setStageFilter('na')} className="text-xs text-slate-500 hover:text-ink" title="Not applicable to this client.">{naCount} N/A</button>}
-      </div>
+      {/* Document repository strip — visible to all */}
+      <button
+        onClick={() => setFilesOpen(true)}
+        className="w-full mb-4 flex items-center gap-3 px-4 py-2.5 rounded-lg border border-tint bg-fog/30 hover:border-green hover:bg-fog/50 transition-colors group text-left"
+      >
+        <svg className="text-slate-400 group-hover:text-green shrink-0 transition-colors" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+        </svg>
+        <span className="text-sm font-medium text-ink">Documents</span>
+        {files.length > 0 && <span className="text-xs text-slate-500">{files.filter(f => f.assignedItemId).length > 0 || files.some(f => !f.assignedItemId && f.status !== 'Irrelevant') ? `${files.filter(f => f.status !== 'Irrelevant').length} file${files.filter(f => f.status !== 'Irrelevant').length !== 1 ? 's' : ''} received` : ''}</span>}
+        {files.filter(f => !f.assignedItemId && f.status !== 'Irrelevant').length > 0 && (
+          <span className="text-xs text-deep font-medium">· {files.filter(f => !f.assignedItemId && f.status !== 'Irrelevant').length} unmatched</span>
+        )}
+        <span className="flex-1" />
+        <span className="text-xs text-slate-400 group-hover:text-green transition-colors">Open →</span>
+      </button>
 
       {canEdit && (
-        <div className="sticky top-0 z-20 -mx-8 px-8 py-3 mb-4 bg-paper border-b border-tint flex flex-wrap items-center gap-2">
-          {selecting ? <Btn onClick={stopSelect} kind="ghost">Cancel</Btn> : (
-            <>
-              <Btn onClick={() => startSelect(owedToUs)} disabled={owed === 0} title={owed ? `Everything the client owes (${owed}) is ticked; untick what you don't want to send.` : 'The client owes nothing right now'}>
-                Message client{owed ? <span className="ml-2 text-[11px] font-normal text-paper/80 tabular-nums">{owed}</span> : null}
-              </Btn>
-              <Btn onClick={() => startSelect(null)} kind="ghost" title="Tick tasks to assign them to someone, or to message a custom set">Select</Btn>
-            </>
-          )}
-          <Btn onClick={() => setFilesOpen(true)} kind="ghost" title="Files the client sent. Match each one to its task.">
-            Files{m.files > 0 ? <span className="ml-2 text-[11px] font-medium text-paper bg-green rounded-full px-1.5 py-px tabular-nums">{m.files}</span> : files.length > 0 ? <span className="ml-2 text-[11px] text-slate-400 tabular-nums">{files.length}</span> : null}
-          </Btn>
-          {libraryHeads.length > 0 && <Btn onClick={() => setScoping(true)} kind="ghost" title="Choose which areas apply to this client">Scope</Btn>}
-          <div className="flex-1" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a task" aria-label="Find a task in this ledger" className="text-sm border border-tint rounded-md px-3 py-1.5 bg-paper w-40 focus:outline-none focus:border-green" />
-          {scopedIn.length > 1 && (
-            <button onClick={() => { const all = scopedIn.every((h) => collapsed[h.headId]); const next = {}; scopedIn.forEach((h) => (next[h.headId] = !all)); setCollapsed(next); }} className="text-xs text-slate-400 hover:text-ink">
-              {scopedIn.every((h) => collapsed[h.headId]) ? 'Expand all' : 'Collapse all'}
-            </button>
-          )}
+        <div className="sticky top-0 z-20 -mx-8 px-8 pt-2.5 pb-2 mb-4 bg-paper border-b border-tint">
+          <div className="flex flex-wrap items-center gap-2">
+
+            {/* Client messaging workflow group */}
+            <div className="flex items-stretch rounded-lg border border-tint overflow-hidden text-xs">
+              {selecting ? (
+                <>
+                  <button onClick={stopSelect} className="px-3 py-1.5 text-slate-500 hover:bg-fog border-r border-tint transition-colors">Cancel</button>
+                  <button
+                    onClick={openCompose}
+                    disabled={messageable === 0}
+                    className={`px-3 py-1.5 font-medium transition-colors ${messageable > 0 ? 'bg-green text-paper hover:bg-deep' : 'text-slate-400 cursor-not-allowed bg-fog/40'}`}
+                  >
+                    Message{messageable > 0 ? <span className="ml-1.5 font-normal opacity-80 tabular-nums">{messageable}</span> : null}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button onClick={() => startSelect(null)} className="px-3 py-1.5 text-slate-600 hover:bg-fog border-r border-tint transition-colors">
+                    Select tasks
+                  </button>
+                  <button
+                    onClick={() => startSelect(owedToUs)}
+                    disabled={owed === 0}
+                    className={`px-3 py-1.5 font-medium transition-colors ${owed > 0 ? 'text-ink hover:bg-fog' : 'text-slate-400 cursor-not-allowed'}`}
+                  >
+                    Message client{owed > 0 ? <span className="ml-1.5 text-[10px] font-normal text-slate-400 tabular-nums">{owed} pending</span> : null}
+                  </button>
+                </>
+              )}
+            </div>
+
+            {/* Scope */}
+            {libraryHeads.length > 0 && (
+              <button onClick={() => setScoping(true)} className="px-3 py-1.5 text-xs text-slate-600 border border-tint rounded-lg hover:bg-fog transition-colors">
+                Scope
+              </button>
+            )}
+
+            <div className="flex-1" />
+
+            {/* Type filter */}
+            <div className="flex items-stretch rounded-lg border border-tint overflow-hidden text-xs">
+              {[['all', 'All'], ['client', 'Client'], ['team', 'Team']].map(([v, label]) => (
+                <button
+                  key={v}
+                  onClick={() => setTypeFilter(v)}
+                  className={`px-2.5 py-1.5 transition-colors border-r border-tint last:border-r-0 ${typeFilter === v ? 'bg-green text-paper font-medium' : 'text-slate-500 hover:bg-fog'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* Search */}
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Find a task"
+              aria-label="Find a task in this ledger"
+              className="text-sm border border-tint rounded-lg px-3 py-1.5 bg-paper w-44 focus:outline-none focus:border-green"
+            />
+
+            {/* Collapse all */}
+            {scopedIn.length > 1 && (
+              <button
+                onClick={() => { const all = scopedIn.every((h) => collapsed[h.headId]); const nxt = {}; scopedIn.forEach((h) => (nxt[h.headId] = !all)); setCollapsed(nxt); }}
+                className="text-xs text-slate-400 hover:text-ink"
+              >
+                {scopedIn.every((h) => collapsed[h.headId]) ? 'Expand all' : 'Collapse all'}
+              </button>
+            )}
+          </div>
+
+          {/* Next step hint + filter controls */}
+          <div className="mt-1.5 flex items-center gap-3 text-xs text-slate-400">
+            {nextStep.action && isPartnerManager
+              ? <button onClick={() => doNext(nextStep.action)} className="hover:text-green hover:underline underline-offset-2">{nextStep.text}</button>
+              : <span>{nextStep.text}</span>}
+            {(stageFilter || typeFilter !== 'all') && (
+              <button onClick={() => { setStageFilter(null); setTypeFilter('all'); }} className="text-green hover:underline underline-offset-2">Clear filters</button>
+            )}
+            {naCount > 0 && stageFilter !== 'na' && (
+              <button onClick={() => setStageFilter('na')} className="hover:text-ink">{naCount} N/A</button>
+            )}
+          </div>
         </div>
       )}
 
@@ -1196,6 +1351,10 @@ export default function EngagementDetail() {
         <FilesModal
           engagementId={id} files={files} heads={includedHeads} onClose={() => setFilesOpen(false)}
           onAdd={addFiles} onMatch={matchFile} onUnmatch={unmatchFile} onRemove={removeFile} canDelete={canDeleteFiles}
+          onMarkIrrelevant={async (fileId, isIrrelevant) => {
+            try { await api.inbox.markIrrelevant(fileId, isIrrelevant); load(); }
+            catch (err) { toast(err.message, 'error'); }
+          }}
         />
       )}
     </div>

@@ -32,6 +32,7 @@ function toItem(row) {
     remarks: row.remarks,
     adhoc: row.adhoc,
     due: row.due,
+    adHocOwner: row.ad_hoc_owner || '',
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -65,17 +66,61 @@ router.get('/', async (req, res) => {
   }
 });
 
+// PATCH /api/items/bulk  — must come BEFORE /:id to avoid Express matching "bulk" as a UUID
+router.patch('/bulk', async (req, res) => {
+  const { updates } = req.body;
+  if (!Array.isArray(updates) || !updates.length) {
+    return res.status(400).json({ error: 'updates array required' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const results = [];
+
+    for (const { id, ...fields } of updates) {
+      const colMap = {
+        status: 'status', statusSince: 'status_since', owner: 'owner', adHocOwner: 'ad_hoc_owner',
+        fileNote: 'file_note', remarks: 'remarks', headIncluded: 'head_included',
+      };
+      const cols = [];
+      const vals = [];
+      let i = 1;
+      for (const [k, col] of Object.entries(colMap)) {
+        if (fields[k] !== undefined) { cols.push(`${col} = $${i++}`); vals.push(fields[k]); }
+      }
+      if (!cols.length) continue;
+      cols.push('updated_at = NOW()');
+      vals.push(id);
+      const { rows } = await client.query(
+        `UPDATE items SET ${cols.join(', ')} WHERE id = $${i} RETURNING *`,
+        vals
+      );
+      if (rows[0]) results.push(toItem(rows[0]));
+    }
+
+    await client.query('COMMIT');
+    res.json({ updated: results.length, items: results });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  } finally {
+    client.release();
+  }
+});
+
 // PATCH /api/items/:id
 router.patch('/:id', async (req, res) => {
   const allowed = [
-    'status', 'statusSince', 'peak', 'owner', 'fileNote', 'dateRequested',
+    'status', 'statusSince', 'peak', 'owner', 'adHocOwner', 'fileNote', 'dateRequested',
     'dateReceived', 'queried', 'dateQueried', 'followups', 'lastContact',
     'remarks', 'due', 'value', 'requestable', 'headIncluded', 'ref', 'section', 'sub', 'p'
   ];
 
-  // Column name mapping camelCase -> snake_case
   const colMap = {
     status: 'status', statusSince: 'status_since', peak: 'peak', owner: 'owner',
+    adHocOwner: 'ad_hoc_owner',
     fileNote: 'file_note', dateRequested: 'date_requested', dateReceived: 'date_received',
     queried: 'queried', dateQueried: 'date_queried', followups: 'followups',
     lastContact: 'last_contact', remarks: 'remarks', due: 'due', value: 'value',
@@ -142,53 +187,7 @@ router.patch('/:id', async (req, res) => {
   }
 });
 
-// PATCH /api/items/bulk  — batch status updates
-router.patch('/bulk', async (req, res) => {
-  const { updates } = req.body;
-  if (!Array.isArray(updates) || !updates.length) {
-    return res.status(400).json({ error: 'updates array required' });
-  }
-
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const results = [];
-
-    for (const { id, ...fields } of updates) {
-      const colMap = {
-        status: 'status', statusSince: 'status_since', owner: 'owner',
-        fileNote: 'file_note', remarks: 'remarks', headIncluded: 'head_included',
-      };
-      const cols = [];
-      const vals = [];
-      let i = 1;
-      for (const [k, col] of Object.entries(colMap)) {
-        if (fields[k] !== undefined) { cols.push(`${col} = $${i++}`); vals.push(fields[k]); }
-      }
-      if (!cols.length) continue;
-      cols.push('updated_at = NOW()');
-      vals.push(id);
-      const { rows } = await client.query(
-        `UPDATE items SET ${cols.join(', ')} WHERE id = $${i} RETURNING *`,
-        vals
-      );
-      if (rows[0]) results.push(toItem(rows[0]));
-    }
-
-    await client.query('COMMIT');
-    res.json({ updated: results.length, items: results });
-  } catch (err) {
-    await client.query('ROLLBACK');
-    console.error(err);
-    res.status(500).json({ error: 'Internal server error' });
-  } finally {
-    client.release();
-  }
-});
-
 // POST /api/items/adhoc
-// Adds an extra, one-off item. Defaults to the Ad-hoc bucket; pass headId/section/sub
-// (plus requestable) to instead add an extra item under an existing library heading.
 router.post('/adhoc', async (req, res) => {
   const {
     engagementId, p, due = '', owner = '', remarks = '',

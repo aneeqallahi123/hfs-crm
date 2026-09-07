@@ -115,22 +115,21 @@ export async function runMigrations() {
   // Add per-file note column to inbox_files
   await pool.query(`ALTER TABLE inbox_files ADD COLUMN IF NOT EXISTS note TEXT NOT NULL DEFAULT ''`);
 
+  // Add ad-hoc (secondary) assignee to items
+  await pool.query(`ALTER TABLE items ADD COLUMN IF NOT EXISTS ad_hoc_owner TEXT NOT NULL DEFAULT ''`);
+
   // WhatsApp automation additions
-  // Index for fast group-id lookup on inbound files
   await pool.query(`
     CREATE INDEX IF NOT EXISTS idx_engagements_wa_group_id ON engagements (wa_group_id)
     WHERE wa_group_id <> ''
   `);
 
-  // Unique constraint on message_id prevents duplicate inbound file storage
-  // (Evolution API can re-deliver messages; empty string is not a duplicate)
   await pool.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_inbox_files_message_id
     ON inbox_files (message_id)
     WHERE message_id <> ''
   `);
 
-  // Catch-all table for files from WhatsApp groups not yet linked to any engagement
   await pool.query(`
     CREATE TABLE IF NOT EXISTS unmatched_inbox (
       id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
