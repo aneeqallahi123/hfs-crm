@@ -32,15 +32,20 @@ function stageOf(it) {
 }
 
 // ---- Item row ----
-function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, selected, onToggleSel, onRemove }) {
+function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, selected, onToggleSel, onRemove, itemFiles = [], onFileUploaded, onFileRemoved }) {
   const [open, setOpen] = useState(false);
   const toast = useToast();
   const [uploading, setUploading] = useState(false);
+  const [downloading, setDownloading] = useState(null);
+  const [removing, setRemoving] = useState(null);
+  const fileInputRef = React.useRef(null);
+
   const tier = progressTier(it);
   const edge = it.status === 'NA' ? 'border-transparent' : tier ? { watch: 'border-tint', flag: 'border-green', urgent: 'border-deep' }[tier] : it.status === 'Completed' ? 'border-tint' : 'border-transparent';
   const isDone = it.status === 'Completed';
   const overdue = it.due && it.due < today() && !isDone && it.status !== 'NA';
-  const hasFile = !!it.fileNote;
+  const fileCount = itemFiles.length;
+  const hasFiles = fileCount > 0;
 
   async function uploadFile(file) {
     setUploading(true);
@@ -49,15 +54,60 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
     fd.append('engagementId', engagementId);
     fd.append('itemId', it.id);
     try {
-      await api.documents.upload(fd);
+      const res = await api.documents.upload(fd);
+      const rawFile = res?.file;
       const done = it.status === 'Completed' || it.status === 'NA';
       await onChange({ fileNote: file.name, status: done ? it.status : 'Under Review', dateReceived: it.dateReceived || today(), queried: false });
+      if (rawFile && onFileUploaded) {
+        onFileUploaded({
+          id: rawFile.id,
+          name: rawFile.name,
+          size: rawFile.size,
+          mimeType: rawFile.mime_type,
+          uploadedAt: rawFile.uploaded_at,
+          assignedItemId: rawFile.assigned_item_id,
+          engagementId: rawFile.engagement_id,
+          status: rawFile.status,
+        });
+      }
       toast('File uploaded', 'success');
     } catch (err) {
       toast(err.message, 'error');
     } finally {
       setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
+  }
+
+  async function openFile(fileId) {
+    setDownloading(fileId);
+    try {
+      const res = await api.documents.downloadUrl(fileId);
+      if (res?.url) window.open(res.url, '_blank');
+    } catch (err) {
+      toast('Could not open file', 'error');
+    } finally {
+      setDownloading(null);
+    }
+  }
+
+  async function removeAttachedFile(fileId) {
+    setRemoving(fileId);
+    try {
+      await api.documents.delete(fileId);
+      if (onFileRemoved) onFileRemoved(fileId);
+      const remaining = itemFiles.filter(f => f.id !== fileId);
+      await onChange({ fileNote: remaining.length ? remaining[remaining.length - 1].name : '' });
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      setRemoving(null);
+    }
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return '';
+    return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' });
   }
 
   return (
@@ -65,11 +115,20 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
       <div className="flex items-center gap-3">
         {selectMode && <input type="checkbox" checked={!!selected} onChange={onToggleSel} title="Select this task" className="shrink-0 accent-green" />}
         <span className="font-mono text-[11px] text-slate-400 w-11 shrink-0">{it.ref !== '•' && it.ref !== '+' ? it.ref : ''}</span>
-        <span className="w-4 shrink-0 flex items-center justify-center" title={hasFile ? `File: ${it.fileNote}` : isDone ? 'Completed with no file on record' : it.requestable ? 'Client sends this' : 'Team does this'}>
-          {hasFile ? (
-            <span className="text-green">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
-            </span>
+        {/* File status indicator */}
+        <span
+          className="w-5 shrink-0 flex items-center justify-center gap-0.5"
+          title={hasFiles ? `${fileCount} file${fileCount > 1 ? 's' : ''} attached` : isDone ? 'Completed with no file on record' : it.requestable ? 'Client sends this' : 'Team does this'}
+        >
+          {hasFiles ? (
+            <>
+              <span className="text-green">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+              </span>
+              {fileCount > 1 && (
+                <span className="text-[9px] font-semibold text-green leading-none tabular-nums">{fileCount}</span>
+              )}
+            </>
           ) : isDone ? (
             <span className="w-2.5 h-2.5 rounded-full border border-green" />
           ) : (
@@ -91,33 +150,80 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
         )}
         <button onClick={() => setOpen(!open)} title="Details" className="text-slate-300 hover:text-slate-600 w-5 shrink-0 text-center">{open ? '▾' : '⋯'}</button>
       </div>
+
       {open && (
-        <div className="mt-2 grid grid-cols-2 gap-2 pb-1" style={{ paddingLeft: '3.75rem' }}>
-          <label className="text-xs text-slate-500">
-            File
-            {hasFile ? (
-              <div className="mt-0.5 flex items-center gap-2 border border-tint rounded px-2 py-1 bg-paper">
-                <span className="text-xs text-ink truncate flex-1" title={it.fileNote}>{it.fileNote}</span>
-                {canEdit && <button onClick={() => onChange({ fileNote: '' })} className="text-xs text-slate-300 hover:text-deep" title="Clear reference">✕</button>}
-              </div>
-            ) : canEdit ? (
-              <label className="mt-0.5 block cursor-pointer text-xs text-green border border-dashed border-tint rounded px-2 py-1 hover:border-green hover:bg-fog text-center">
-                {uploading ? 'Uploading…' : 'Upload a file'}
-                <input type="file" className="hidden" disabled={uploading} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(f); }} />
-              </label>
-            ) : <div className="mt-0.5 text-xs text-slate-400">No file</div>}
-          </label>
-          <label className="text-xs text-slate-500">
-            W.P. ref / note
-            {canEdit ? <EditableText value={it.fileNote || ''} onSave={(v) => onChange({ fileNote: v })} placeholder="working-paper reference…" className="w-full mt-0.5 text-xs" />
-              : <div className="mt-0.5 text-xs text-ink">{it.fileNote || '—'}</div>}
-          </label>
-          <label className="text-xs text-slate-500 col-span-2">
-            Remarks
-            {canEdit ? <EditableText value={it.remarks || ''} onSave={(v) => onChange({ remarks: v })} placeholder="add a remark…" className="w-full mt-0.5 text-xs" />
-              : <div className="mt-0.5 text-xs text-ink">{it.remarks || '—'}</div>}
-          </label>
-          <div className="col-span-2 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-500">
+        <div className="mt-2 pb-1 space-y-2" style={{ paddingLeft: '3.75rem' }}>
+          {/* ── Files ─────────────────────────────────────────────── */}
+          <div>
+            <div className="text-xs text-slate-500 mb-1">
+              {hasFiles ? `${fileCount} file${fileCount > 1 ? 's' : ''} attached` : 'Files'}
+            </div>
+            <div className="space-y-1">
+              {itemFiles.map((f) => (
+                <div key={f.id} className="group/file flex items-center gap-2 px-2 py-1.5 rounded border border-tint bg-paper hover:border-slate-300 transition-colors">
+                  {/* Document icon */}
+                  <svg className="shrink-0 text-slate-400" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
+                  </svg>
+                  {/* Filename — click to download */}
+                  <button
+                    onClick={() => openFile(f.id)}
+                    disabled={!!downloading}
+                    className="flex-1 text-xs text-left text-green hover:underline underline-offset-2 truncate disabled:opacity-60"
+                    title={f.name}
+                  >
+                    {downloading === f.id ? 'Opening…' : f.name}
+                  </button>
+                  {/* Upload date */}
+                  {f.uploadedAt && (
+                    <span className="text-[10px] text-slate-400 shrink-0 tabular-nums">{fmtDate(f.uploadedAt)}</span>
+                  )}
+                  {/* Remove */}
+                  {canEdit && (
+                    <button
+                      onClick={() => removeAttachedFile(f.id)}
+                      disabled={removing === f.id}
+                      className="shrink-0 w-4 h-4 flex items-center justify-center text-[10px] text-slate-300 hover:text-deep rounded transition-colors opacity-0 group-hover/file:opacity-100 disabled:opacity-40"
+                      title="Remove this file"
+                    >
+                      {removing === f.id ? '…' : '✕'}
+                    </button>
+                  )}
+                </div>
+              ))}
+
+              {/* Upload area */}
+              {canEdit && (
+                <label className={`flex items-center justify-center gap-1.5 px-2 py-1.5 rounded border border-dashed text-xs cursor-pointer transition-colors ${uploading ? 'border-tint text-slate-400 cursor-wait' : 'border-tint text-slate-400 hover:border-green hover:text-green'}`}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
+                  </svg>
+                  {uploading ? 'Uploading…' : hasFiles ? 'Add another file' : 'Upload a file'}
+                  <input ref={fileInputRef} type="file" className="hidden" disabled={uploading} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(f); }} />
+                </label>
+              )}
+              {!hasFiles && !canEdit && <div className="text-xs text-slate-400 py-1">No files attached</div>}
+            </div>
+          </div>
+
+          {/* ── W.P. ref + Remarks ────────────────────────────────── */}
+          <div className="grid grid-cols-2 gap-2">
+            <label className="text-xs text-slate-500">
+              W.P. ref / note
+              {canEdit
+                ? <EditableText value={it.fileNote || ''} onSave={(v) => onChange({ fileNote: v })} placeholder="working-paper reference…" className="w-full mt-0.5 text-xs" />
+                : <div className="mt-0.5 text-xs text-ink">{it.fileNote || '—'}</div>}
+            </label>
+            <label className="text-xs text-slate-500">
+              Remarks
+              {canEdit
+                ? <EditableText value={it.remarks || ''} onSave={(v) => onChange({ remarks: v })} placeholder="add a remark…" className="w-full mt-0.5 text-xs" />
+                : <div className="mt-0.5 text-xs text-ink">{it.remarks || '—'}</div>}
+            </label>
+          </div>
+
+          {/* ── Dates + flags ─────────────────────────────────────── */}
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-500">
             <label className="flex items-center gap-2">
               Received on
               <input type="date" value={it.dateReceived || ''} max={today()} disabled={!canEdit} onChange={(e) => onChange({ dateReceived: e.target.value })} className="border border-tint rounded px-2 py-1 text-xs text-ink focus:outline-none focus:border-green disabled:opacity-60" />
@@ -133,7 +239,9 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
               </label>
             )}
           </div>
-          <div className="col-span-2 flex items-center gap-4 text-xs text-slate-400">
+
+          {/* ── Meta + delete ─────────────────────────────────────── */}
+          <div className="flex items-center gap-4 text-xs text-slate-400">
             {it.dateRequested && <span>Requested {it.dateRequested}</span>}
             {it.followups > 0 && <span>{it.followups} reminder{it.followups > 1 ? 's' : ''}</span>}
             <span className="flex-1" />
@@ -949,6 +1057,9 @@ export default function EngagementDetail() {
                       selectMode={selecting} selected={!!sel[it.id]} onToggleSel={() => setSel((s) => ({ ...s, [it.id]: !s[it.id] }))}
                       onChange={(patch) => updateItem(it.id, patch)}
                       onRemove={canEdit && isAdhoc(it) ? () => { if (confirm(`Delete "${it.p}"? The Activity log keeps a trace.`)) removeItem(it.id); } : null}
+                      itemFiles={files.filter(f => f.assignedItemId === it.id)}
+                      onFileUploaded={(file) => setFiles(prev => [...prev, file])}
+                      onFileRemoved={(fileId) => setFiles(prev => prev.filter(f => f.id !== fileId))}
                     />
                   ))}
                   {canEdit && (
