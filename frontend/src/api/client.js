@@ -90,6 +90,7 @@ export const api = {
     assign: (fileId, itemId) => request('PATCH', `/inbox/${fileId}/assign`, { itemId }),
     unassign: (fileId) => request('PATCH', `/inbox/${fileId}/assign`, { itemId: null }),
     updateNote: (fileId, note) => request('PATCH', `/inbox/${fileId}/note`, { note }),
+    markIrrelevant: (fileId, irrelevant) => request('PATCH', `/inbox/${fileId}/irrelevant`, { irrelevant }),
   },
   documents: {
     upload: (formData) => fetch(`${import.meta.env.VITE_API_URL}/documents/upload`, {

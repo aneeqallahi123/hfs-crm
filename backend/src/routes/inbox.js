@@ -95,4 +95,21 @@ router.patch('/:fileId/note', async (req, res) => {
   }
 });
 
+// PATCH /api/inbox/:fileId/irrelevant
+router.patch('/:fileId/irrelevant', async (req, res) => {
+  const { irrelevant } = req.body;
+  try {
+    const newStatus = irrelevant ? 'Irrelevant' : 'Unmatched';
+    const { rows } = await pool.query(
+      `UPDATE inbox_files SET status = $1 WHERE id = $2 RETURNING *`,
+      [newStatus, req.params.fileId]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'File not found' });
+    res.json({ file: toFile(rows[0]) });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;
