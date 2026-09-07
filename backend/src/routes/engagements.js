@@ -101,9 +101,9 @@ router.post('/', rbac('partner', 'manager'), async (req, res) => {
       for (const it of libItems) {
         await client.query(
           `INSERT INTO items
-             (engagement_id, ref, section, head_id, sub, p, requestable, head_included, status)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'No progress')`,
-          [eng.id, it.ref, head.section, head.head_id, head.sub, it.p, it.req, included]
+             (engagement_id, ref, section, head_id, sub, p, requestable, head_included, kind, status)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'No progress')`,
+          [eng.id, it.ref, head.section, head.head_id, head.sub, it.p, it.req, included, it.task_type || 'document']
         );
       }
     }
