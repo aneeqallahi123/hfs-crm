@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import fetch from 'node-fetch';
 import { pool } from '../db/pool.js';
 import { uploadFile } from '../storage/minio.js';
 
@@ -15,9 +14,15 @@ function webhookAuth(req, res, next) {
 const MAX_FILE_BYTES = parseInt(process.env.MAX_INBOX_FILE_MB || '50', 10) * 1024 * 1024;
 
 // POST /api/webhooks/inbound-file
-// Called by n8n when Evolution API receives a WhatsApp file
+// Called by n8n when Evolution API receives a WhatsApp file.
+// n8n must call Evolution API's /chat/getBase64FromMediaMessage first to decrypt the media,
+// then POST { fileBase64, mimeType, ... } here — never a raw CDN URL (those bytes are encrypted).
 router.post('/inbound-file', webhookAuth, async (req, res) => {
-  const { engagementId, groupId, sender, messageId, fileName, fileUrl, mimeType } = req.body;
+  const { engagementId, groupId, sender, messageId, fileName, fileBase64, mimeType } = req.body;
+
+  if (!fileBase64) {
+    return res.status(400).json({ error: 'fileBase64 required — pass the decrypted file from Evolution API getBase64FromMediaMessage' });
+  }
 
   try {
     // Dedup: skip if this messageId was already stored
@@ -29,10 +34,8 @@ router.post('/inbound-file', webhookAuth, async (req, res) => {
       if (dup[0]) return res.json({ received: true, duplicate: true });
     }
 
-    // Download file from WhatsApp CDN
-    const fileRes = await fetch(fileUrl);
-    if (!fileRes.ok) throw new Error(`Failed to download file: ${fileRes.status}`);
-    const buffer = Buffer.from(await fileRes.arrayBuffer());
+    // Decode base64 — Evolution API returns the decrypted file as base64
+    const buffer = Buffer.from(fileBase64, 'base64');
 
     // File size guard
     if (buffer.length > MAX_FILE_BYTES) {
