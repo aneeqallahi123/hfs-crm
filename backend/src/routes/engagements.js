@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import fetch from 'node-fetch';
 import { pool } from '../db/pool.js';
 import { rbac } from '../middleware/rbac.js';
 import { defaultIncluded } from '../db/library_seed.js';
@@ -260,6 +261,86 @@ router.post('/:id/roll-forward', rbac('partner', 'manager'), async (req, res) =>
     res.status(500).json({ error: 'Internal server error' });
   } finally {
     client.release();
+  }
+});
+
+// POST /api/engagements/:id/whatsapp-message
+// Sends a message to the engagement's WA group via n8n/Evolution API,
+// then marks the provided items as Requested ("Awaited").
+router.post('/:id/whatsapp-message', rbac('partner', 'manager'), async (req, res) => {
+  const { itemIds, messageText } = req.body;
+  if (!Array.isArray(itemIds) || itemIds.length === 0 || !messageText?.trim()) {
+    return res.status(400).json({ error: 'itemIds[] and messageText required' });
+  }
+
+  try {
+    const { rows: [eng] } = await pool.query(
+      'SELECT * FROM engagements WHERE id = $1',
+      [req.params.id]
+    );
+    if (!eng) return res.status(404).json({ error: 'Engagement not found' });
+    if (!eng.wa_group_id) return res.status(400).json({ error: 'No WhatsApp group linked to this engagement' });
+
+    // Student guard
+    if (req.user.role === 'student' && eng.incharge !== req.user.name) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+
+    const n8nUrl = process.env.N8N_SEND_WEBHOOK_URL;
+    if (!n8nUrl) return res.status(503).json({ error: 'WhatsApp send not configured (N8N_SEND_WEBHOOK_URL missing)' });
+
+    // Send to n8n → Evolution API
+    const n8nRes = await fetch(n8nUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-webhook-secret': process.env.WEBHOOK_SECRET || '',
+      },
+      body: JSON.stringify({ groupId: eng.wa_group_id, messageText: messageText.trim() }),
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!n8nRes.ok) {
+      const body = await n8nRes.text().catch(() => '');
+      console.error('n8n send failed:', n8nRes.status, body);
+      return res.status(502).json({ error: `WhatsApp send failed (n8n ${n8nRes.status})` });
+    }
+
+    // Only update statuses after confirmed send
+    const today = new Date().toISOString().slice(0, 10);
+    const { rows: [c] } = await pool.query('SELECT name FROM clients WHERE id = $1', [eng.client_id]);
+    let updatedCount = 0;
+
+    for (const itemId of itemIds) {
+      const { rows: [item] } = await pool.query(
+        'SELECT id, status, p, ref FROM items WHERE id = $1 AND engagement_id = $2',
+        [itemId, eng.id]
+      );
+      if (!item || item.status === 'Requested') continue;
+
+      const oldStatus = item.status;
+      await pool.query(
+        `UPDATE items SET status = 'Requested', status_since = $1, date_requested = $2, updated_at = NOW()
+         WHERE id = $3`,
+        [today, today, item.id]
+      );
+      await logEvent({
+        by: req.user.name, userId: req.user.sub, module: eng.module,
+        engagementId: eng.id, clientId: eng.client_id,
+        entity: 'item', entityId: item.id,
+        label: item.p || item.ref, type: 'item.status',
+        from: oldStatus, to: 'Requested',
+      });
+      updatedCount++;
+    }
+
+    res.json({ sent: true, updatedCount });
+  } catch (err) {
+    if (err.name === 'TimeoutError' || err.name === 'AbortError') {
+      return res.status(502).json({ error: 'WhatsApp send timed out — n8n did not respond in time' });
+    }
+    console.error('whatsapp-message error:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

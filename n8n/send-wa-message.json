@@ -1,0 +1,99 @@
+{
+  "name": "HFS CRM — Send WA Message",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "hfs-send-wa-message",
+        "options": {}
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "hfs-send-wa-message",
+      "notes": "POST triggered by CRM backend. Header: x-webhook-secret. Body: { groupId, messageText }"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $request.headers['x-webhook-secret'] }}",
+              "value2": "={{ $env.WEBHOOK_SECRET }}"
+            }
+          ]
+        }
+      },
+      "name": "Auth Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "notes": "Validate shared secret. True → proceed, False → return 401."
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.EVOLUTION_API_URL }}/message/sendText/{{ $env.EVOLUTION_INSTANCE }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.EVOLUTION_API_KEY }}" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "number", "value": "={{ $json.body.groupId }}" },
+            { "name": "text", "value": "={{ $json.body.messageText }}" }
+          ]
+        },
+        "options": { "timeout": 8000 }
+      },
+      "name": "Evolution API — Send Text",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 200],
+      "notes": "Sends the message to the WA group via Evolution API."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"ok\": true }"
+      },
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 401,
+        "responseBody": "={ \"error\": \"Unauthorized\" }"
+      },
+      "name": "Respond 401",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [650, 400]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Auth Check", "type": "main", "index": 0 }]] },
+    "Auth Check": {
+      "main": [
+        [{ "node": "Evolution API — Send Text", "type": "main", "index": 0 }],
+        [{ "node": "Respond 401", "type": "main", "index": 0 }]
+      ]
+    },
+    "Evolution API — Send Text": { "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]] }
+  },
+  "_meta": {
+    "templateCredsSetupCompleted": false,
+    "notes": [
+      "Required env vars in n8n: EVOLUTION_API_URL, EVOLUTION_API_KEY, EVOLUTION_INSTANCE, WEBHOOK_SECRET",
+      "groupId format for WA groups: 120363XXXXXXXXXX@g.us (as shown in Evolution API)"
+    ]
+  }
+}

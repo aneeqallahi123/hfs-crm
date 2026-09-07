@@ -118,6 +118,33 @@ export async function runMigrations() {
   // Add ad-hoc (secondary) assignee to items
   await pool.query(`ALTER TABLE items ADD COLUMN IF NOT EXISTS ad_hoc_owner TEXT NOT NULL DEFAULT ''`);
 
+  // WhatsApp automation additions
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_engagements_wa_group_id ON engagements (wa_group_id)
+    WHERE wa_group_id <> ''
+  `);
+
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_inbox_files_message_id
+    ON inbox_files (message_id)
+    WHERE message_id <> ''
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS unmatched_inbox (
+      id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      group_id    TEXT NOT NULL DEFAULT '',
+      sender      TEXT NOT NULL DEFAULT '',
+      message_id  TEXT NOT NULL DEFAULT '',
+      name        TEXT NOT NULL,
+      size        BIGINT NOT NULL DEFAULT 0,
+      mime_type   TEXT NOT NULL DEFAULT '',
+      minio_key   TEXT NOT NULL DEFAULT '',
+      received_at TEXT NOT NULL DEFAULT '',
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
   // Seed audit library if empty
   const { rows: existing } = await pool.query(
     `SELECT COUNT(*) AS cnt FROM library_heads WHERE module = 'audit'`
