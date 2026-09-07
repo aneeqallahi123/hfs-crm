@@ -31,6 +31,87 @@ function stageOf(it) {
   return 'internal';
 }
 
+// ---- Per-file row (inside expanded ItemRow) ----
+function FileRow({ file, canEdit, downloading, removing, onOpen, onRemove, onNoteChange }) {
+  const [note, setNote] = useState(file.note || '');
+  const [savingNote, setSavingNote] = useState(false);
+  const dirty = note !== (file.note || '');
+
+  // keep in sync if parent refreshes
+  React.useEffect(() => { setNote(file.note || ''); }, [file.note]);
+
+  async function saveNote() {
+    if (!dirty) return;
+    setSavingNote(true);
+    try { await api.inbox.updateNote(file.id, note); onNoteChange(note); }
+    catch { setNote(file.note || ''); }
+    finally { setSavingNote(false); }
+  }
+
+  // source: 'whatsapp' → came from client; anything else → uploaded internally
+  const fromClient = file.source === 'whatsapp';
+
+  function fmtDate(iso) {
+    if (!iso) return '';
+    return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' });
+  }
+
+  return (
+    <div className="group/file rounded border border-tint bg-paper hover:border-slate-300 transition-colors overflow-hidden">
+      {/* Top row: icon + name + source + date + remove */}
+      <div className="flex items-center gap-2 px-2.5 py-2">
+        <svg className="shrink-0 text-slate-400" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
+        </svg>
+        <button
+          onClick={onOpen}
+          disabled={downloading}
+          className="flex-1 text-xs text-left text-green hover:underline underline-offset-2 truncate min-w-0 disabled:opacity-60"
+          title={file.name}
+        >
+          {downloading ? 'Opening…' : file.name}
+        </button>
+        {/* Source badge */}
+        <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 font-medium ${fromClient ? 'bg-green/10 text-green' : 'bg-slate-100 text-slate-500'}`}>
+          {fromClient ? 'Client' : 'Internal'}
+        </span>
+        {file.uploadedAt && (
+          <span className="text-[10px] text-slate-400 shrink-0 tabular-nums">{fmtDate(file.uploadedAt)}</span>
+        )}
+        {canEdit && (
+          <button
+            onClick={onRemove}
+            disabled={removing}
+            className="shrink-0 w-4 h-4 flex items-center justify-center text-[10px] text-slate-300 hover:text-deep rounded transition-colors opacity-0 group-hover/file:opacity-100 disabled:opacity-40"
+            title="Remove this file"
+          >
+            {removing ? '…' : '✕'}
+          </button>
+        )}
+      </div>
+      {/* Note row */}
+      <div className="px-2.5 pb-2 flex items-center gap-2 border-t border-tint/40 pt-1.5">
+        <span className="text-[10px] text-slate-400 shrink-0">Note</span>
+        {canEdit ? (
+          <>
+            <input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              onBlur={saveNote}
+              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+              placeholder="W.P. ref, source detail, or remark about this file…"
+              className="flex-1 text-xs bg-transparent text-ink placeholder-slate-300 border border-transparent hover:border-tint focus:border-green focus:bg-paper rounded px-1.5 py-0.5 focus:outline-none min-w-0"
+            />
+            {savingNote && <span className="text-[10px] text-slate-400 shrink-0">saving…</span>}
+          </>
+        ) : (
+          <span className="text-xs text-ink flex-1">{file.note || <span className="text-slate-400">—</span>}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ---- Item row ----
 function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, selected, onToggleSel, onRemove, itemFiles = [], onFileUploaded, onFileRemoved }) {
   const [open, setOpen] = useState(false);
@@ -105,11 +186,6 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
     }
   }
 
-  function fmtDate(iso) {
-    if (!iso) return '';
-    return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' });
-  }
-
   return (
     <div className={`group pl-3 pr-4 py-2 border-l-4 ${edge} ${it.status === 'NA' ? 'opacity-40' : ''} ${selected ? 'bg-fog/60' : ''} transition-colors`}>
       <div className="flex items-center gap-3">
@@ -152,77 +228,65 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
       </div>
 
       {open && (
-        <div className="mt-2 pb-1 space-y-2" style={{ paddingLeft: '3.75rem' }}>
-          {/* ── Files ─────────────────────────────────────────────── */}
-          <div>
-            <div className="text-xs text-slate-500 mb-1">
-              {hasFiles ? `${fileCount} file${fileCount > 1 ? 's' : ''} attached` : 'Files'}
-            </div>
-            <div className="space-y-1">
-              {itemFiles.map((f) => (
-                <div key={f.id} className="group/file flex items-center gap-2 px-2 py-1.5 rounded border border-tint bg-paper hover:border-slate-300 transition-colors">
-                  {/* Document icon */}
-                  <svg className="shrink-0 text-slate-400" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
-                  </svg>
-                  {/* Filename — click to download */}
-                  <button
-                    onClick={() => openFile(f.id)}
-                    disabled={!!downloading}
-                    className="flex-1 text-xs text-left text-green hover:underline underline-offset-2 truncate disabled:opacity-60"
-                    title={f.name}
-                  >
-                    {downloading === f.id ? 'Opening…' : f.name}
-                  </button>
-                  {/* Upload date */}
-                  {f.uploadedAt && (
-                    <span className="text-[10px] text-slate-400 shrink-0 tabular-nums">{fmtDate(f.uploadedAt)}</span>
-                  )}
-                  {/* Remove */}
-                  {canEdit && (
-                    <button
-                      onClick={() => removeAttachedFile(f.id)}
-                      disabled={removing === f.id}
-                      className="shrink-0 w-4 h-4 flex items-center justify-center text-[10px] text-slate-300 hover:text-deep rounded transition-colors opacity-0 group-hover/file:opacity-100 disabled:opacity-40"
-                      title="Remove this file"
-                    >
-                      {removing === f.id ? '…' : '✕'}
-                    </button>
-                  )}
-                </div>
-              ))}
+        <div className="mt-2 pb-1 space-y-3" style={{ paddingLeft: '3.75rem' }}>
 
-              {/* Upload area */}
-              {canEdit && (
-                <label className={`flex items-center justify-center gap-1.5 px-2 py-1.5 rounded border border-dashed text-xs cursor-pointer transition-colors ${uploading ? 'border-tint text-slate-400 cursor-wait' : 'border-tint text-slate-400 hover:border-green hover:text-green'}`}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
-                  </svg>
-                  {uploading ? 'Uploading…' : hasFiles ? 'Add another file' : 'Upload a file'}
-                  <input ref={fileInputRef} type="file" className="hidden" disabled={uploading} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(f); }} />
-                </label>
-              )}
-              {!hasFiles && !canEdit && <div className="text-xs text-slate-400 py-1">No files attached</div>}
-            </div>
+          {/* ── Files ─────────────────────────────────────────────── */}
+          <div className="space-y-1.5">
+            {itemFiles.map((f) => (
+              <FileRow
+                key={f.id}
+                file={f}
+                canEdit={canEdit}
+                downloading={downloading === f.id}
+                removing={removing === f.id}
+                onOpen={() => openFile(f.id)}
+                onRemove={() => removeAttachedFile(f.id)}
+                onNoteChange={(note) => {
+                  if (onFileUploaded) onFileUploaded({ ...f, note });
+                  if (onFileRemoved) onFileRemoved(f.id);
+                }}
+              />
+            ))}
+
+            {/* Upload trigger */}
+            {canEdit && (
+              <label className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-dashed text-xs cursor-pointer transition-colors ${uploading ? 'border-tint text-slate-400 cursor-wait' : 'border-tint text-slate-400 hover:border-green hover:text-green'}`}>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
+                </svg>
+                {uploading ? 'Uploading…' : hasFiles ? 'Add another file' : 'Upload a file'}
+                <input ref={fileInputRef} type="file" className="hidden" disabled={uploading} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(f); }} />
+              </label>
+            )}
+            {!hasFiles && !canEdit && <div className="text-xs text-slate-400">No files attached</div>}
           </div>
 
-          {/* ── W.P. ref + Remarks ────────────────────────────────── */}
+          {/* ── Task-level fields ─────────────────────────────────── */}
           <div className="grid grid-cols-2 gap-2">
-            <label className="text-xs text-slate-500">
-              W.P. ref / note
-              {canEdit
-                ? <EditableText value={it.fileNote || ''} onSave={(v) => onChange({ fileNote: v })} placeholder="working-paper reference…" className="w-full mt-0.5 text-xs" />
-                : <div className="mt-0.5 text-xs text-ink">{it.fileNote || '—'}</div>}
-            </label>
             <label className="text-xs text-slate-500">
               Remarks
               {canEdit
-                ? <EditableText value={it.remarks || ''} onSave={(v) => onChange({ remarks: v })} placeholder="add a remark…" className="w-full mt-0.5 text-xs" />
+                ? <EditableText value={it.remarks || ''} onSave={(v) => onChange({ remarks: v })} placeholder="overall task remark…" className="w-full mt-0.5 text-xs" />
                 : <div className="mt-0.5 text-xs text-ink">{it.remarks || '—'}</div>}
             </label>
+            <div className="text-xs text-slate-500">
+              Who provides this
+              <div className="mt-1 flex rounded border border-tint overflow-hidden text-[11px] w-fit">
+                <button
+                  disabled={!canEdit}
+                  onClick={() => canEdit && onChange({ requestable: true })}
+                  className={`px-3 py-1 transition-colors ${it.requestable ? 'bg-green text-paper font-medium' : 'text-slate-500 hover:bg-fog disabled:cursor-default'}`}
+                >Client</button>
+                <button
+                  disabled={!canEdit}
+                  onClick={() => canEdit && onChange({ requestable: false })}
+                  className={`px-3 py-1 border-l border-tint transition-colors ${!it.requestable ? 'bg-deep text-paper font-medium' : 'text-slate-500 hover:bg-fog disabled:cursor-default'}`}
+                >Team</button>
+              </div>
+            </div>
           </div>
 
-          {/* ── Dates + flags ─────────────────────────────────────── */}
+          {/* ── Dates ─────────────────────────────────────────────── */}
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-500">
             <label className="flex items-center gap-2">
               Received on
@@ -232,12 +296,6 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
               Due
               <input type="date" value={it.due || ''} disabled={!canEdit} onChange={(e) => onChange({ due: e.target.value })} className="border border-tint rounded px-2 py-1 text-xs text-ink focus:outline-none focus:border-green disabled:opacity-60" />
             </label>
-            {canEdit && (
-              <label className="flex items-center gap-1.5 cursor-pointer">
-                <input type="checkbox" checked={!!it.requestable} onChange={(e) => onChange({ requestable: e.target.checked })} />
-                Client sends this
-              </label>
-            )}
           </div>
 
           {/* ── Meta + delete ─────────────────────────────────────── */}

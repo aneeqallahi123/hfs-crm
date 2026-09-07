@@ -20,6 +20,7 @@ function toFile(row) {
     groupId: row.group_id,
     status: row.status,
     assignedItemId: row.assigned_item_id,
+    note: row.note || '',
     createdAt: row.created_at,
   };
 }
@@ -70,6 +71,23 @@ router.patch('/:fileId/assign', async (req, res) => {
       );
     }
 
+    res.json({ file: toFile(rows[0]) });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// PATCH /api/inbox/:fileId/note
+router.patch('/:fileId/note', async (req, res) => {
+  const { note } = req.body;
+  if (note === undefined) return res.status(400).json({ error: 'note required' });
+  try {
+    const { rows } = await pool.query(
+      `UPDATE inbox_files SET note = $1 WHERE id = $2 RETURNING *`,
+      [note, req.params.fileId]
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'File not found' });
     res.json({ file: toFile(rows[0]) });
   } catch (err) {
     console.error(err);

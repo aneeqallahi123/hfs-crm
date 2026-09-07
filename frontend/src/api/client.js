@@ -89,6 +89,7 @@ export const api = {
     list: (engagementId) => request('GET', engagementId ? `/inbox?engagementId=${engagementId}` : '/inbox').then(r => r?.files ?? r),
     assign: (fileId, itemId) => request('PATCH', `/inbox/${fileId}/assign`, { itemId }),
     unassign: (fileId) => request('PATCH', `/inbox/${fileId}/assign`, { itemId: null }),
+    updateNote: (fileId, note) => request('PATCH', `/inbox/${fileId}/note`, { note }),
   },
   documents: {
     upload: (formData) => fetch(`${import.meta.env.VITE_API_URL}/documents/upload`, {
