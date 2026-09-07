@@ -53,14 +53,19 @@ router.post('/inbound-file', webhookAuth, async (req, res) => {
         'SELECT id FROM engagements WHERE wa_group_id = $1 LIMIT 1',
         [groupId]
       );
-      console.log(`[inbound-file] groupId="${groupId}" matched=${!!rows[0]}`);
       if (rows[0]) {
         resolvedEngagementId = rows[0].id;
         matched = true;
       } else {
-        // Log all wa_group_ids in DB for diagnosis
-        const { rows: allGroups } = await pool.query('SELECT id, wa_group_id FROM engagements WHERE wa_group_id IS NOT NULL');
-        console.log('[inbound-file] wa_group_ids in DB:', JSON.stringify(allGroups));
+        const { rows: allGroups } = await pool.query(
+          "SELECT id, wa_group_id FROM engagements WHERE wa_group_id <> '' AND wa_group_id IS NOT NULL"
+        );
+        // Return diagnostic info so n8n execution log shows the mismatch
+        return res.json({
+          received: true,
+          matched: false,
+          debug: { receivedGroupId: groupId, storedGroupIds: allGroups.map(r => r.wa_group_id) }
+        });
       }
     }
 
