@@ -100,7 +100,10 @@ export const api = {
       credentials: 'include',
       body: formData,
     }).then(r => r.json()),
-    downloadUrl: (fileId) => request('GET', `/documents/${fileId}/download`),
+    open: (fileId) => {
+      const token = accessToken ? `?token=${encodeURIComponent(accessToken)}` : '';
+      window.open(`${import.meta.env.VITE_API_URL}/documents/${fileId}/download${token}`, '_blank');
+    },
     delete: (fileId) => request('DELETE', `/documents/${fileId}`),
   },
   team: {

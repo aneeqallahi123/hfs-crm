@@ -16,6 +16,8 @@ export default function Team() {
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [role, setRole] = useState('student');
   const td = today();
 
@@ -44,11 +46,11 @@ export default function Team() {
   useEffect(() => { load(); }, []);
 
   async function add() {
-    if (!name.trim()) return;
+    if (!name.trim() || !username.trim() || !password.trim()) return;
     try {
-      await api.team.create({ name: name.trim(), username: name.trim().toLowerCase().replace(/\s+/g, '.'), password: Math.random().toString(36).slice(2, 10), role });
-      toast(`${name.trim()} joined the team — set their password from Edit`, 'success');
-      setName(''); setRole('student'); setAdding(false);
+      await api.team.create({ name: name.trim(), username: username.trim().toLowerCase(), password, role });
+      toast(`${name.trim()} joined the team`, 'success');
+      setName(''); setUsername(''); setPassword(''); setRole('student'); setAdding(false);
       load();
     } catch (err) {
       toast(err.message, 'error');
@@ -118,19 +120,31 @@ export default function Team() {
       </header>
 
       {adding && (
-        <div className="bg-paper border border-tint rounded-xl p-4 mb-6 flex items-end gap-2">
-          <label className="flex-1 text-xs font-medium text-slate-500">
-            Name
-            <input autoFocus value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') add(); if (e.key === 'Escape') setAdding(false); }} placeholder="e.g. Ali Raza" className="w-full mt-1 border border-tint rounded-md px-3 py-2 text-sm focus:outline-none focus:border-green" />
-          </label>
-          <label className="text-xs font-medium text-slate-500">
-            Role
-            <select value={role} onChange={(e) => setRole(e.target.value)} className="block mt-1 border border-tint rounded-md px-3 py-2 text-sm bg-paper focus:outline-none focus:border-green">
-              {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>)}
-            </select>
-          </label>
-          <button onClick={add} disabled={!name.trim()} className="text-sm px-4 py-2 rounded-md font-medium bg-green text-paper hover:bg-deep disabled:opacity-40 transition-colors">Add</button>
-          <button onClick={() => setAdding(false)} className="text-sm px-4 py-2 rounded-md font-medium text-ink bg-paper hover:bg-fog border border-tint transition-colors">Cancel</button>
+        <div className="bg-paper border border-tint rounded-xl p-4 mb-6">
+          <div className="flex items-end gap-2 mb-3">
+            <label className="flex-1 text-xs font-medium text-slate-500">
+              Name
+              <input autoFocus value={name} onChange={(e) => { setName(e.target.value); if (!username) setUsername(e.target.value.trim().toLowerCase().replace(/\s+/g, '.')); }} placeholder="e.g. Ali Raza" className="w-full mt-1 border border-tint rounded-md px-3 py-2 text-sm focus:outline-none focus:border-green" />
+            </label>
+            <label className="text-xs font-medium text-slate-500">
+              Role
+              <select value={role} onChange={(e) => setRole(e.target.value)} className="block mt-1 border border-tint rounded-md px-3 py-2 text-sm bg-paper focus:outline-none focus:border-green">
+                {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>)}
+              </select>
+            </label>
+          </div>
+          <div className="flex items-end gap-2">
+            <label className="flex-1 text-xs font-medium text-slate-500">
+              Username <span className="text-slate-400 font-normal">(used to log in)</span>
+              <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="e.g. ali.raza" className="w-full mt-1 border border-tint rounded-md px-3 py-2 text-sm focus:outline-none focus:border-green font-mono" />
+            </label>
+            <label className="flex-1 text-xs font-medium text-slate-500">
+              Password
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') add(); if (e.key === 'Escape') setAdding(false); }} placeholder="Set initial password" className="w-full mt-1 border border-tint rounded-md px-3 py-2 text-sm focus:outline-none focus:border-green" />
+            </label>
+            <button onClick={add} disabled={!name.trim() || !username.trim() || !password.trim()} className="text-sm px-4 py-2 rounded-md font-medium bg-green text-paper hover:bg-deep disabled:opacity-40 transition-colors">Add</button>
+            <button onClick={() => { setAdding(false); setName(''); setUsername(''); setPassword(''); }} className="text-sm px-4 py-2 rounded-md font-medium text-ink bg-paper hover:bg-fog border border-tint transition-colors">Cancel</button>
+          </div>
         </div>
       )}
 

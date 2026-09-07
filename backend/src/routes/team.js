@@ -50,7 +50,7 @@ router.post('/', rbac('partner'), async (req, res) => {
 
 // PATCH /api/team/:id
 router.patch('/:id', rbac('partner'), async (req, res) => {
-  const { name, role, password } = req.body;
+  const { name, username, role, password } = req.body;
   try {
     const { rows: beforeRows } = await pool.query('SELECT * FROM users WHERE id = $1', [req.params.id]);
     const before = beforeRows[0];
@@ -61,6 +61,7 @@ router.patch('/:id', rbac('partner'), async (req, res) => {
     let i = 1;
 
     if (name) { updates.push(`name = $${i++}`); values.push(name); }
+    if (username) { updates.push(`username = $${i++}`); values.push(username.toLowerCase()); }
     if (role) {
       if (!['partner', 'manager', 'student'].includes(role)) {
         return res.status(400).json({ error: 'Invalid role' });

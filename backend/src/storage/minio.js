@@ -43,3 +43,7 @@ export async function getPresignedUrl(key) {
 export async function deleteFile(key) {
   await getClient().removeObject(BUCKET, key);
 }
+
+export async function streamFile(key) {
+  return getClient().getObject(BUCKET, key);
+}

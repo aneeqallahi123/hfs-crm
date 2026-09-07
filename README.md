@@ -13,6 +13,7 @@ A production CRM for managing audit clients, engagements, checklists, and docume
 | Backend API | https://hfs-crm-production.up.railway.app |
 | Health check | https://hfs-crm-production.up.railway.app/health |
 | MinIO console | https://minio.hfccrm.org |
+| n8n | https://n8n.hfccrm.org |
 
 ---
 
@@ -31,19 +32,37 @@ A production CRM for managing audit clients, engagements, checklists, and docume
 │  JWT auth (15m access / 7d refresh httpOnly cookie)  │
 └──────────┬──────────────────────┬───────────────────┘
            │                      │
-┌──────────▼──────────┐  ┌───────▼────────────────────┐
-│  Railway            │  │  Local Mini PC              │
-│  PostgreSQL         │  │  MinIO (Docker)             │
-│  (postgres:16)      │  │  ← Cloudflare Tunnel →      │
-│  postgres.railway   │  │  minio.hfccrm.org           │
-│  .internal:5432     │  │  (permanent named tunnel,   │
-└─────────────────────┘  │   runs as launchd service)  │
-                         └─────────────────────────────┘
+┌──────────▼──────────┐  ┌───────▼─────────────────────────────────────┐
+│  Railway            │  │  Local Mini PC (macOS)                       │
+│  PostgreSQL         │  │                                              │
+│  (postgres:16)      │  │  MinIO (Docker)  → minio.hfccrm.org         │
+│  postgres.railway   │  │  n8n    (Docker)  → n8n.hfccrm.org          │
+│  .internal:5432     │  │  Evolution API   → localhost:8080 (internal) │
+└─────────────────────┘  │                                              │
+                         │  Cloudflare Tunnel: hfc-minio                │
+                         │  (runs as launchd service, survives reboots) │
+                         └─────────────────────────────────────────────┘
 ```
 
-**Planned (not yet set up):**
-- n8n (local mini PC) — workflow automation
-- Evolution API (local mini PC) — WhatsApp Business API
+### WhatsApp Automation Flow
+
+```
+Outbound (CRM → WA group):
+  EngagementDetail "Send to group"
+    → POST /api/engagements/:id/whatsapp-message
+    → n8n send-wa-message workflow
+    → Evolution API sendText
+    → WA group receives message
+    → selected item statuses flip to Requested
+
+Inbound (WA group → inbox):
+  Evolution API MESSAGES_UPSERT webhook
+    → n8n receive-wa-file workflow (filters media only)
+    → POST /api/webhooks/inbound-file
+    → file downloaded + uploaded to MinIO
+    → inbox_files row inserted (matched by wa_group_id)
+    → unmatched_inbox row if group unknown
+```
 
 ---
 
@@ -63,10 +82,12 @@ hfs-crm/
 │   │   ├── routes/
 │   │   │   ├── auth.js          # POST /login, /refresh, /logout, GET /me
 │   │   │   ├── clients.js       # CRUD /clients
-│   │   │   ├── engagements.js   # CRUD /engagements + roll-forward
+│   │   │   ├── engagements.js   # CRUD /engagements + roll-forward + WA send
 │   │   │   ├── items.js         # checklist items CRUD + bulk update
 │   │   │   ├── inbox.js         # WhatsApp file inbox
 │   │   │   ├── documents.js     # file upload/download via MinIO (50 MB limit)
+│   │   │   ├── library.js       # task library CRUD
+│   │   │   ├── client-library.js# per-client library customisation
 │   │   │   ├── team.js          # user management (partner only)
 │   │   │   ├── events.js        # audit event log
 │   │   │   └── webhooks.js      # n8n webhooks (shared-secret auth)
@@ -85,7 +106,6 @@ hfs-crm/
 │   │   ├── components/
 │   │   │   ├── Layout.jsx       # sidebar + outlet
 │   │   │   ├── Sidebar.jsx      # nav links (role-aware)
-│   │   │   ├── ClientLibrary.jsx # reference data per year (collapsed by default)
 │   │   │   ├── Modal.jsx
 │   │   │   ├── Btn.jsx
 │   │   │   └── Field.jsx
@@ -94,14 +114,19 @@ hfs-crm/
 │   │   │   ├── Dashboard.jsx
 │   │   │   ├── Clients.jsx
 │   │   │   ├── ClientDetail.jsx
-│   │   │   ├── EngagementDetail.jsx
-│   │   │   ├── Team.jsx         # partner only
-│   │   │   └── Events.jsx       # partner + manager
+│   │   │   ├── EngagementDetail.jsx  # main checklist + WA send UI
+│   │   │   ├── Library.jsx           # task library management
+│   │   │   ├── Team.jsx              # partner only
+│   │   │   └── Events.jsx            # partner + manager
+│   │   ├── lib/metrics.js       # composeMessage(), status helpers
 │   │   ├── App.jsx              # router + auth guards
 │   │   └── main.jsx
 │   ├── public/_redirects        # SPA routing for Cloudflare Pages
 │   ├── vite.config.js
 │   └── package.json
+├── n8n/
+│   ├── send-wa-message.json     # outbound WA workflow export
+│   └── receive-wa-file.json     # inbound WA file workflow export
 ├── .github/workflows/deploy.yml # CI: lint backend + deploy frontend to CF Pages
 └── README.md                    # this file
 ```
@@ -135,19 +160,32 @@ All endpoints except `/auth/*` and `/webhooks/*` require `Authorization: Bearer 
 ### Clients
 `GET /clients` · `POST /clients` · `GET /clients/:id` · `PATCH /clients/:id` · `DELETE /clients/:id`
 
+Clients carry a `waGroupId` field — the WhatsApp group ID linked to that client's engagements.
+
 ### Engagements
 `GET /engagements` · `POST /engagements` · `GET /engagements/:id` · `PATCH /engagements/:id` · `DELETE /engagements/:id` · `POST /engagements/:id/roll-forward`
+
+`POST /engagements/:id/whatsapp-message` — send a message to the engagement's linked WA group
+- Body: `{ itemIds: string[], messageText: string }`
+- Auth: partner | manager
+- Calls n8n send webhook; on success flips all `itemIds` statuses to `Requested`
+- Returns `{ sent: true, updatedCount }`
 
 ### Items
 `GET /items?engagementId=` · `PATCH /items/:id` · `PATCH /items/bulk` · `POST /items/adhoc` · `DELETE /items/:id`
 
-Item status values: `No progress` | `In progress` | `Completed` | `N/A`
+Item status values: `No progress` | `In progress` | `Requested` | `Under Review` | `Completed` | `N/A`
+
+Items carry a `kind` field: `document` (default) | `number` | `information` — determines the UI shown in the expanded task panel (file upload vs. text input). `kind` is seeded from the Task Library on engagement creation and can be overridden per-engagement.
 
 ### Inbox
 `GET /inbox?engagementId=` · `PATCH /inbox/:id/assign`
 
 ### Documents
 `POST /documents/upload` (multipart, max 50 MB) · `GET /documents/:id/download` → presigned URL · `DELETE /documents/:id`
+
+### Library
+`GET /library` · `PUT /library` — task library CRUD (partner only)
 
 ### Team (partner only)
 `GET /team` · `POST /team` · `PATCH /team/:id` · `DELETE /team/:id`
@@ -156,8 +194,72 @@ Item status values: `No progress` | `In progress` | `Completed` | `N/A`
 `GET /events?userId=&entityType=&from=&to=&limit=`
 
 ### Webhooks (shared-secret: `X-Webhook-Secret` header)
-`POST /webhooks/inbound-file` — WhatsApp file → MinIO → inbox
-`POST /webhooks/portal-sync` — idempotent status update
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/webhooks/inbound-file` | WhatsApp file from n8n → MinIO → `inbox_files`. Unknown groups stored in `unmatched_inbox`. Deduplicates by `message_id`. Rejects files > 50 MB with 413. |
+| POST | `/webhooks/portal-sync` | Idempotent status update |
+
+---
+
+## WhatsApp Automation
+
+### Infrastructure
+
+| Component | Where | Details |
+|-----------|-------|---------|
+| Evolution API | Local Mini PC (Docker) | `localhost:8080`, instance: `my-whatsapp` |
+| n8n | Local Mini PC (Docker) | `localhost:5678`, exposed at `n8n.hfccrm.org` |
+
+### Linking a WhatsApp group to an engagement
+
+1. Get the group JID from Evolution API (format: `120363XXXXXXXXXX@g.us`)
+2. Set `wa_group_id` on the client or engagement record
+3. The "Send to group" button in the ComposeModal becomes active
+
+### n8n Workflows
+
+**`send-wa-message`** — outbound  
+Trigger: `POST https://n8n.hfccrm.org/webhook/hfs-send-wa-message`  
+Nodes: Webhook → Auth Check (`x-webhook-secret` header) → Evolution API `POST /message/sendText/{instance}` → Respond OK / Respond 401
+
+**`receive-wa-file`** — inbound  
+Trigger: Evolution API `MESSAGES_UPSERT` webhook  
+Nodes: Filter media messages → Extract fields → `POST /api/webhooks/inbound-file` → Log errors
+
+### Outbound — "Send to group" flow
+
+1. Partner selects tasks in EngagementDetail, clicks **Message client**
+2. ComposeModal opens with auto-composed message (editable)
+3. **Send to group** button calls `POST /api/engagements/:id/whatsapp-message`
+4. Backend forwards to n8n with `{ groupId, messageText }` + `x-webhook-secret` header (10 s timeout)
+5. n8n calls Evolution API → message delivered to WA group
+6. On success: statuses flip to `Requested`, inline confirmation shown in modal
+
+### Inbound — file intake flow
+
+1. Client shares file in linked WA group
+2. Evolution API fires `MESSAGES_UPSERT` webhook to n8n
+3. n8n filters for media, POSTs `{ groupId, mediaUrl, fileName, mimeType, sender, messageId }` to `/webhooks/inbound-file`
+4. Backend resolves engagement by `wa_group_id`, downloads file from Evolution API, uploads to MinIO
+5. `inbox_files` row inserted with `source='whatsapp'`; unrecognised groups go to `unmatched_inbox`
+6. Files appear in the engagement's Documents inbox
+
+---
+
+## Task Types (kind)
+
+Tasks in the Task Library are typed as **Document**, **Number**, or **Information**.
+
+| Type | UI in EngagementDetail | Storage |
+|------|----------------------|---------|
+| `document` | File upload button | MinIO via `inbox_files` |
+| `number` | Text input(s) | `items.value` (JSON array) |
+| `information` | Text input(s) | `items.value` (JSON array) |
+
+- Multiple values are supported for `number`/`information` — use **+ Add another value**
+- `kind` is copied from the library into `items` when an engagement is created
+- Partners can override `kind` per-engagement via the Type dropdown in the expanded task panel
 
 ---
 
@@ -180,7 +282,9 @@ Item status values: `No progress` | `In progress` | `Completed` | `N/A`
 | `MINIO_ACCESS_KEY` | MinIO root user |
 | `MINIO_SECRET_KEY` | MinIO root password |
 | `MINIO_BUCKET` | `hfc-documents` |
-| `WEBHOOK_SECRET` | Shared secret for webhook endpoints |
+| `WEBHOOK_SECRET` | Shared secret for all webhook endpoints |
+| `N8N_SEND_WEBHOOK_URL` | `https://n8n.hfccrm.org/webhook/hfs-send-wa-message` |
+| `EVOLUTION_INSTANCE` | `my-whatsapp` |
 | `NODE_ENV` | `production` |
 
 ### Frontend (Cloudflare Pages + GitHub Actions)
@@ -198,13 +302,23 @@ Item status values: `No progress` | `In progress` | `Completed` | `N/A`
 
 ---
 
-## MinIO (Local Mini PC)
+## MinIO & n8n (Local Mini PC)
 
-- Running via Docker Compose at `localhost:9000` (API) and `localhost:9001` (console)
-- Exposed via **permanent** Cloudflare Tunnel `hfc-minio` at `minio.hfccrm.org`
-- Tunnel runs as a macOS launchd service — survives reboots automatically
-- Bucket: `hfc-documents` (auto-created on backend startup)
-- Tunnel config: `~/.cloudflared/config.yml` on the Mini PC
+Both services run via Docker on the local Mini PC and are exposed through the **same** Cloudflare Tunnel (`hfc-minio`).
+
+### Tunnel config (`~/.cloudflared/config.yml` on Mini PC)
+```yaml
+tunnel: hfc-minio
+credentials-file: /Users/automation-aneeq/.cloudflared/9960c899-ac01-4d08-a1a3-2e94f05b1197.json
+ingress:
+  - hostname: minio.hfccrm.org
+    service: http://localhost:9000
+  - hostname: n8n.hfccrm.org
+    service: http://localhost:5678
+  - service: http_status:404
+```
+
+The tunnel runs as a macOS launchd service (`/Library/LaunchDaemons/com.cloudflare.cloudflared.plist`) and survives reboots automatically.
 
 ### Tunnel management (on Mini PC)
 ```bash
@@ -219,6 +333,15 @@ sudo launchctl stop com.cloudflare.cloudflared
 sudo launchctl start com.cloudflare.cloudflared
 ```
 
+### MinIO
+- Docker Compose at `localhost:9000` (API) and `localhost:9001` (console)
+- Bucket: `hfc-documents` (auto-created on backend startup)
+
+### n8n
+- Docker at `localhost:5678`
+- Workflows imported from `n8n/` directory in this repo
+- Community edition — env vars not accessible inside nodes; secrets are hardcoded in workflow node values
+
 ---
 
 ## CI/CD
@@ -227,8 +350,7 @@ Every push to `main`:
 1. GitHub Actions lints the backend (`npm run lint --if-present`)
 2. Builds the frontend (`npm run build` with `VITE_API_URL`)
 3. Deploys to Cloudflare Pages project `hfc-smart-audit` via Wrangler
-
-Railway does **not** auto-deploy on push. To trigger a Railway redeploy, use the Railway MCP connector's `redeploy` tool or push a new deployment from the Railway dashboard.
+4. Railway auto-deploys the backend from `main`
 
 ---
 
@@ -239,7 +361,7 @@ Railway does **not** auto-deploy on push. To trigger a Railway redeploy, use the
 | Account | `Hfc.crm@outlook.com` |
 | Domain | `hfccrm.org` |
 | Pages project | `hfc-smart-audit` → `app.hfccrm.org` |
-| Tunnel | `hfc-minio` (ID: `9960c899-ac01-4d08-a1a3-2e94f05b1197`) → `minio.hfccrm.org` |
+| Tunnel | `hfc-minio` (ID: `9960c899-ac01-4d08-a1a3-2e94f05b1197`) → `minio.hfccrm.org` + `n8n.hfccrm.org` |
 
 ---
 
@@ -264,9 +386,12 @@ Railway account: `grand-generosity` (hfc202612)
 | Dashboard | `/` | All roles |
 | Clients | `/clients` | All roles |
 | Client Detail + Reference Data | `/clients/:id` | All roles |
-| Engagement Detail (checklist, inbox, docs) | `/engagements/:id` | All roles |
+| Engagement Detail (checklist, inbox, docs, WA send) | `/engagements/:id` | All roles |
+| Task Library | `/library` | Partner only |
 | Team Management | `/team` | Partner only |
 | Events / Audit Log | `/events` | Partner + Manager |
+
+---
 
 ## Rate Limits
 
@@ -278,12 +403,21 @@ Railway account: `grand-generosity` (hfc202612)
 
 ---
 
+## Completed Features
+
+- [x] Frontend — all pages built and deployed to `app.hfccrm.org`
+- [x] Permanent MinIO tunnel — `hfc-minio` running as launchd service at `minio.hfccrm.org`
+- [x] n8n tunnel — same `hfc-minio` tunnel, `n8n.hfccrm.org`
+- [x] Domain — `hfccrm.org` purchased and configured
+- [x] Task Library — master checklist with Document / Number / Information task types
+- [x] Task type sync — `kind` copied from library into engagement items on creation; overridable per-engagement
+- [x] WhatsApp outbound automation — "Send to group" in ComposeModal → n8n → Evolution API → WA group; statuses flip to Requested
+- [x] WhatsApp inbound automation — Evolution API → n8n → `/webhooks/inbound-file` → MinIO → inbox; unknown groups stored in `unmatched_inbox`
+- [x] n8n setup — running at `n8n.hfccrm.org`, two workflows active
+- [x] Evolution API setup — instance `my-whatsapp` running locally
+
 ## Pending / Next Steps
 
-- [ ] **n8n setup** on local mini PC — workflow automation connecting Evolution API → backend webhooks
-- [ ] **Evolution API setup** on local mini PC — WhatsApp Business API for document intake
-- [ ] **Set up Railway auto-deploy** — Railway account `grand-generosity` (hfc202612) has GitHub connected but auto-deploy not configured; currently triggered manually via Railway MCP
-- [x] **Frontend** — all pages built and deployed to `app.hfccrm.org`
-- [x] **Permanent MinIO tunnel** — `hfc-minio` tunnel running as launchd service at `minio.hfccrm.org`
-- [x] **Domain** — `hfccrm.org` purchased and configured (Cloudflare account: Hfc.crm@outlook.com)
-- [x] **Reference Data UI** — year-gated, sections collapsed by default
+- [ ] **Set up Railway auto-deploy** — Railway account `grand-generosity` has GitHub connected; verify auto-deploy is active on push to `main`
+- [ ] **Rotate webhook secret** — generate a new one with `openssl rand -hex 32` and update Railway env var + n8n workflow node values
+- [ ] **Unmatched inbox UI** — surface files from `unmatched_inbox` table in a global admin view

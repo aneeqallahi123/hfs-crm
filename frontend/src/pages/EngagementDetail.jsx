@@ -175,16 +175,8 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
     }
   }
 
-  async function openFile(fileId) {
-    setDownloading(fileId);
-    try {
-      const res = await api.documents.downloadUrl(fileId);
-      if (res?.url) window.open(res.url, '_blank');
-    } catch (err) {
-      toast('Could not open file', 'error');
-    } finally {
-      setDownloading(null);
-    }
+  function openFile(fileId) {
+    api.documents.open(fileId);
   }
 
   async function removeAttachedFile(fileId) {
@@ -816,8 +808,8 @@ function FilesModal({ engagementId, files, heads, onClose, onAdd, onMatch, onUnm
     return Object.values(groups);
   })();
 
-  async function openFile(f) {
-    try { const { url } = await api.documents.downloadUrl(f.id); window.open(url, '_blank'); } catch {}
+  function openFile(f) {
+    api.documents.open(f.id);
   }
 
   async function handleAdd(fileList) {
