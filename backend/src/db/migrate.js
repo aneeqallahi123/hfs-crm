@@ -145,6 +145,26 @@ export async function runMigrations() {
     )
   `);
 
+  // Allow 'Irrelevant' status in inbox_files (drop old check constraint and recreate)
+  await pool.query(`
+    DO $$
+    DECLARE
+      cname TEXT;
+    BEGIN
+      SELECT conname INTO cname
+      FROM pg_constraint
+      WHERE conrelid = 'inbox_files'::regclass
+        AND contype = 'c'
+        AND pg_get_constraintdef(oid) LIKE '%Irrelevant%' IS NOT TRUE
+        AND pg_get_constraintdef(oid) LIKE '%Unmatched%';
+      IF cname IS NOT NULL THEN
+        EXECUTE 'ALTER TABLE inbox_files DROP CONSTRAINT ' || quote_ident(cname);
+        ALTER TABLE inbox_files ADD CONSTRAINT inbox_files_status_check
+          CHECK (status IN ('Unmatched','Matched','Irrelevant'));
+      END IF;
+    END$$
+  `);
+
   // Seed audit library if empty
   const { rows: existing } = await pool.query(
     `SELECT COUNT(*) AS cnt FROM library_heads WHERE module = 'audit'`
