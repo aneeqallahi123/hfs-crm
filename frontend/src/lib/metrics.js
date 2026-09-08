@@ -132,7 +132,7 @@ export function engMetrics(e, inboxFiles = []) {
   const dt = deadlineTier(e, pct);
   if (dt && (!worst || RANK[dt] > RANK[worst])) worst = dt;
   const daysLeft = e.deadline ? daysBetween(today(), e.deadline) : null;
-  const files = (inboxFiles || []).filter((f) => !f.assignedItemId).length;
+  const files = (inboxFiles || []).filter((f) => !f.assignedItemId && f.status !== 'Irrelevant').length;
   return { total, done, pct, outstandingCount: outstanding.length, oldest, queries, reqTotal: reqItems.length, review, adhocOpen, worst, daysLeft, files };
 }
 

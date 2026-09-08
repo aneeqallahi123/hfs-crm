@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -30,57 +30,137 @@ function edgeCls(tier) {
   return tier ? ({ watch: 'border-tint', flag: 'border-green', urgent: 'border-deep' })[tier] : 'border-transparent';
 }
 
-function PortfolioTable({ rows, navigate }) {
+// Groups engagements by client, with collapsible year rows and search
+function ClientsTable({ rows, navigate }) {
+  const [search, setSearch] = useState('');
+  const [expanded, setExpanded] = useState({});
+
+  // Group rows by clientId
+  const grouped = [];
+  const seen = {};
+  for (const row of rows) {
+    const cid = row.e.clientId;
+    if (!seen[cid]) {
+      seen[cid] = true;
+      const clientRows = rows.filter((r) => r.e.clientId === cid);
+      grouped.push({ client: row.client, clientId: cid, rows: clientRows });
+    }
+  }
+
+  const q = search.trim().toLowerCase();
+  const filtered = q ? grouped.filter((g) => (g.client?.name || '').toLowerCase().includes(q)) : grouped;
+
+  function toggle(cid) {
+    setExpanded((prev) => ({ ...prev, [cid]: !prev[cid] }));
+  }
+
+  // Sort: worst health first
   const rank = (m) => (m.pct === 100 ? -1 : m.worst ? RANK[m.worst] : 0);
-  const sorted = rows.slice().sort((a, b) =>
-    (rank(b.m) - rank(a.m)) ||
-    ((a.m.daysLeft ?? 1e9) - (b.m.daysLeft ?? 1e9)) ||
-    ((b.m.oldest || 0) - (a.m.oldest || 0))
-  );
+  const sortedGrouped = filtered.slice().sort((a, b) => {
+    const bestA = Math.max(...a.rows.map((r) => rank(r.m)));
+    const bestB = Math.max(...b.rows.map((r) => rank(r.m)));
+    return bestB - bestA;
+  });
+
   return (
-    <div className="bg-paper border border-tint rounded-xl overflow-hidden">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-left font-mono text-[11px] text-slate-500 border-b border-tint bg-fog/60">
-            <th className="px-4 py-2.5 font-medium">Client</th>
-            <th className="px-4 py-2.5 font-medium">FY</th>
-            <th className="px-4 py-2.5 font-medium w-40">Progress</th>
-            <th className="px-4 py-2.5 font-medium text-right">Awaited</th>
-            <th className="px-4 py-2.5 font-medium text-right">To review</th>
-            <th className="px-4 py-2.5 font-medium text-right">Due</th>
-            <th className="px-4 py-2.5 font-medium">Health</th>
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map(({ e, client, m }) => {
-            const h = healthOf(m);
-            return (
-              <tr key={e.id} onClick={() => navigate(`/engagements/${e.id}`)} className="border-b border-tint last:border-0 hover:bg-fog cursor-pointer transition-colors">
-                <td className="px-4 py-3 font-medium text-ink">
-                  {client?.name} {e.incharge && <span className="ml-2 text-xs text-slate-400 font-normal">{e.incharge}</span>}
-                </td>
-                <td className="px-4 py-3 text-slate-500 tabular-nums">{e.year}</td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 h-1.5 bg-fog rounded-full overflow-hidden">
-                      <div className="h-full bg-green rounded-full" style={{ width: m.pct + '%' }} />
-                    </div>
-                    <span className="text-xs text-slate-500 tabular-nums w-8">{m.pct}%</span>
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-right tabular-nums text-ink">{m.outstandingCount || <span className="text-slate-300">0</span>}</td>
-                <td className="px-4 py-3 text-right tabular-nums text-ink">{m.review || <span className="text-slate-300">0</span>}</td>
-                <td className={`px-4 py-3 text-right tabular-nums ${m.daysLeft != null && m.daysLeft < 0 && m.pct < 100 ? 'text-deep font-medium' : m.daysLeft != null && m.daysLeft <= 7 && m.pct < 100 ? 'text-green' : 'text-slate-500'}`} title={e.deadline || 'No deadline set'}>
-                  {m.pct === 100 ? '—' : m.daysLeft == null ? <span className="text-slate-300">—</span> : m.daysLeft < 0 ? `${-m.daysLeft}d over` : m.daysLeft === 0 ? 'today' : `${m.daysLeft}d`}
-                </td>
-                <td className="px-4 py-3">
-                  <span className={`text-xs px-2 py-0.5 rounded-full border ${h.cls}`}>{h.label}</span>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+    <div>
+      <div className="mb-2">
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search clients…"
+          className="w-full sm:w-64 text-sm px-3 py-1.5 rounded-lg border border-tint bg-paper focus:outline-none focus:border-green placeholder:text-slate-400"
+        />
+      </div>
+      <div className="bg-paper border border-tint rounded-xl overflow-hidden max-h-[500px] overflow-y-auto">
+        <table className="w-full text-sm">
+          <thead className="sticky top-0 z-10 bg-fog/95">
+            <tr className="text-left font-mono text-[11px] text-slate-500 border-b border-tint">
+              <th className="px-4 py-2.5 font-medium">Client</th>
+              <th className="px-4 py-2.5 font-medium">FY</th>
+              <th className="px-4 py-2.5 font-medium w-40">Progress</th>
+              <th className="px-4 py-2.5 font-medium text-right">Awaited</th>
+              <th className="px-4 py-2.5 font-medium text-right">To review</th>
+              <th className="px-4 py-2.5 font-medium text-right">Due</th>
+              <th className="px-4 py-2.5 font-medium">Health</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedGrouped.length === 0 && (
+              <tr><td colSpan={7} className="px-4 py-6 text-sm text-slate-400">No clients found.</td></tr>
+            )}
+            {sortedGrouped.map(({ client, clientId, rows: cRows }) => {
+              const isOpen = expanded[clientId];
+              // Show the most recent (highest year) engagement as the summary row
+              const sorted = cRows.slice().sort((a, b) => (b.e.year > a.e.year ? 1 : -1));
+              const primary = sorted[0];
+              const hasMultiple = cRows.length > 1;
+              return (
+                <React.Fragment key={clientId}>
+                  {/* Client summary / primary row */}
+                  <tr
+                    onClick={() => hasMultiple ? toggle(clientId) : navigate(`/engagements/${primary.e.id}`)}
+                    className="border-b border-tint last:border-0 hover:bg-fog cursor-pointer transition-colors"
+                  >
+                    <td className="px-4 py-3 font-medium text-ink">
+                      <span className="flex items-center gap-1.5">
+                        {hasMultiple && (
+                          <span className={`text-slate-400 text-xs transition-transform ${isOpen ? 'rotate-90' : ''} inline-block`}>▶</span>
+                        )}
+                        {client?.name}
+                        {primary.e.incharge && <span className="ml-1 text-xs text-slate-400 font-normal">{primary.e.incharge}</span>}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-slate-500 tabular-nums">{primary.e.year}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-1.5 bg-fog rounded-full overflow-hidden">
+                          <div className="h-full bg-green rounded-full" style={{ width: primary.m.pct + '%' }} />
+                        </div>
+                        <span className="text-xs text-slate-500 tabular-nums w-8">{primary.m.pct}%</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums text-ink">{primary.m.outstandingCount || <span className="text-slate-300">0</span>}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-ink">{primary.m.review || <span className="text-slate-300">0</span>}</td>
+                    <td className={`px-4 py-3 text-right tabular-nums ${primary.m.daysLeft != null && primary.m.daysLeft < 0 && primary.m.pct < 100 ? 'text-deep font-medium' : primary.m.daysLeft != null && primary.m.daysLeft <= 7 && primary.m.pct < 100 ? 'text-green' : 'text-slate-500'}`}>
+                      {primary.m.pct === 100 ? '—' : primary.m.daysLeft == null ? <span className="text-slate-300">—</span> : primary.m.daysLeft < 0 ? `${-primary.m.daysLeft}d over` : primary.m.daysLeft === 0 ? 'today' : `${primary.m.daysLeft}d`}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`text-xs px-2 py-0.5 rounded-full border ${healthOf(primary.m).cls}`}>{healthOf(primary.m).label}</span>
+                    </td>
+                  </tr>
+                  {/* Additional year rows (shown when expanded) */}
+                  {hasMultiple && isOpen && sorted.slice(1).map(({ e, m }) => {
+                    const h = healthOf(m);
+                    return (
+                      <tr key={e.id} onClick={() => navigate(`/engagements/${e.id}`)} className="border-b border-tint last:border-0 hover:bg-fog/60 cursor-pointer transition-colors bg-fog/30">
+                        <td className="px-4 py-2.5 text-slate-400 pl-10 text-xs">↳ FY {e.year}</td>
+                        <td className="px-4 py-2.5 text-slate-400 tabular-nums text-xs">{e.year}</td>
+                        <td className="px-4 py-2.5">
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 h-1.5 bg-tint rounded-full overflow-hidden">
+                              <div className="h-full bg-green/60 rounded-full" style={{ width: m.pct + '%' }} />
+                            </div>
+                            <span className="text-xs text-slate-400 tabular-nums w-8">{m.pct}%</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-2.5 text-right tabular-nums text-slate-500 text-xs">{m.outstandingCount || <span className="text-slate-300">0</span>}</td>
+                        <td className="px-4 py-2.5 text-right tabular-nums text-slate-500 text-xs">{m.review || <span className="text-slate-300">0</span>}</td>
+                        <td className={`px-4 py-2.5 text-right tabular-nums text-xs ${m.daysLeft != null && m.daysLeft < 0 && m.pct < 100 ? 'text-deep' : 'text-slate-400'}`}>
+                          {m.pct === 100 ? '—' : m.daysLeft == null ? <span className="text-slate-300">—</span> : m.daysLeft < 0 ? `${-m.daysLeft}d over` : m.daysLeft === 0 ? 'today' : `${m.daysLeft}d`}
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <span className={`text-xs px-2 py-0.5 rounded-full border ${h.cls}`}>{h.label}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -94,6 +174,7 @@ export default function Dashboard() {
   const [inboxByEng, setInboxByEng] = useState({});
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
+  const [firmFilter, setFirmFilter] = useState('all'); // for Needs Attention section
   const navigate = useNavigate();
   const td = today();
 
@@ -147,9 +228,13 @@ export default function Dashboard() {
 
   const totalOutstanding = rows.reduce((s, r) => s + r.m.outstandingCount, 0);
   const toReview = rows.reduce((s, r) => s + r.m.review, 0);
-  const filesToMatch = rows.reduce((s, r) => s + r.m.files, 0);
+  // Files to match: only non-irrelevant, unmatched files
+  const filesToMatch = rows.reduce((s, r) => s + (inboxByEng[r.e.id] || []).filter((f) => !f.assignedItemId && f.status !== 'Irrelevant').length, 0);
   const flaggedCount = rows.reduce((s, r) => s + r.items.filter((it) => it.headIncluded && progressTier(it)).length, 0);
+  // Open tasks: Not Requested (requestable, No Progress) + Not Started (non-requestable, No Progress)
+  const openTasksCount = rows.reduce((s, r) => s + r.items.filter((it) => it.headIncluded && it.status === 'No progress').length, 0);
 
+  // Build attention list — only active inbox files (not Irrelevant)
   const attention = [];
   for (const { e, client, items } of rows) {
     for (const it of items) {
@@ -157,23 +242,41 @@ export default function Dashboard() {
       const tier = progressTier(it);
       const awaited = it.requestable && isAwaited(it);
       const review = it.status === 'Under Review';
-      if (!tier && !awaited && !review) continue;
+      const notStarted = !it.requestable && it.status === 'No progress';
+      const notRequested = it.requestable && it.status === 'No progress';
+      if (!tier && !awaited && !review && !notStarted && !notRequested) continue;
       const age = review ? daysBetweenSafe(it.dateReceived, td) : awaited ? daysBetweenSafe(it.queried ? it.dateQueried : it.dateRequested, td) : noProgressDays(it);
-      attention.push({ kind: 'doc', e, client, it, tier, awaited, review, age, who: it.owner || e.incharge || '' });
+      attention.push({ kind: 'doc', e, client, it, tier, awaited, review, notStarted, notRequested, age, who: it.owner || e.incharge || '', section: it.section || '', sub: it.sub || '' });
     }
     for (const f of (inboxByEng[e.id] || [])) {
-      if (f.assignedItemId) continue;
+      if (f.assignedItemId || f.status === 'Irrelevant') continue;
       const age = daysBetweenSafe(f.receivedAt ? f.receivedAt.slice(0, 10) : null, td);
       attention.push({ kind: 'file', e, client, f, tier: age >= 10 ? 'flag' : age >= 3 ? 'watch' : null, age, who: e.incharge || '' });
     }
   }
+
   const isMine = (a) => user?.name && a.who === user.name;
-  const filtered = attention.filter((a) => filter === 'all' ? true :
+
+  // Firm filter options
+  const firmOptions = [{ id: 'all', label: 'All firms' }];
+  const seenClients = new Set();
+  for (const { e, client } of rows) {
+    if (!seenClients.has(e.clientId)) {
+      seenClients.add(e.clientId);
+      firmOptions.push({ id: e.clientId, label: client?.name || e.clientId });
+    }
+  }
+
+  const firmFiltered = firmFilter === 'all' ? attention : attention.filter((a) => a.e.clientId === firmFilter);
+
+  const filtered = firmFiltered.filter((a) => filter === 'all' ? true :
     filter === 'mine' ? isMine(a) :
     filter === 'awaited' ? a.kind === 'doc' && a.awaited :
     filter === 'review' ? a.kind === 'doc' && a.review :
     filter === 'flagged' ? !!a.tier :
     filter === 'adhoc' ? a.kind === 'doc' && isAdhoc(a.it) :
+    filter === 'notStarted' ? a.kind === 'doc' && a.notStarted :
+    filter === 'notRequested' ? a.kind === 'doc' && a.notRequested :
     filter === 'files' ? a.kind === 'file' : true
   ).sort((a, b) => {
     const ra = a.tier ? RANK[a.tier] : 0, rb = b.tier ? RANK[b.tier] : 0;
@@ -182,16 +285,44 @@ export default function Dashboard() {
   });
 
   const FILTERS = [
-    ['all', 'Everything', attention.length],
-    ['mine', 'Mine', attention.filter(isMine).length],
-    ['awaited', 'Awaited', attention.filter((a) => a.kind === 'doc' && a.awaited).length],
-    ['review', 'To review', attention.filter((a) => a.kind === 'doc' && a.review).length],
-    ['flagged', 'Flagged', attention.filter((a) => !!a.tier).length],
-    ['adhoc', 'Ad-hoc', attention.filter((a) => a.kind === 'doc' && isAdhoc(a.it)).length],
-    ['files', 'Files to match', attention.filter((a) => a.kind === 'file').length],
+    ['all', 'Everything', firmFiltered.length],
+    ['mine', 'Mine', firmFiltered.filter(isMine).length],
+    ['awaited', 'Awaited', firmFiltered.filter((a) => a.kind === 'doc' && a.awaited).length],
+    ['review', 'To review', firmFiltered.filter((a) => a.kind === 'doc' && a.review).length],
+    ['flagged', 'Flagged', firmFiltered.filter((a) => !!a.tier).length],
+    ['adhoc', 'Ad-hoc', firmFiltered.filter((a) => a.kind === 'doc' && isAdhoc(a.it)).length],
+    ['notStarted', 'Not started', firmFiltered.filter((a) => a.kind === 'doc' && a.notStarted).length],
+    ['notRequested', 'Not requested', firmFiltered.filter((a) => a.kind === 'doc' && a.notRequested).length],
+    ['files', 'Files to match', firmFiltered.filter((a) => a.kind === 'file').length],
   ];
 
   const overallPct = rows.length ? Math.round(rows.reduce((s, r) => s + r.m.pct, 0) / rows.length) : 0;
+
+  // Group filtered items by section > sub for categorized display
+  function groupBySectionSub(items) {
+    const sections = [];
+    const sectionMap = {};
+    for (const a of items) {
+      if (a.kind === 'file') {
+        let sec = sectionMap['__files__'];
+        if (!sec) { sec = { section: 'Unmatched Files', subs: [], subMap: {} }; sectionMap['__files__'] = sec; sections.push(sec); }
+        let sub = sec.subMap[''];
+        if (!sub) { sub = { sub: '', items: [] }; sec.subMap[''] = sub; sec.subs.push(sub); }
+        sub.items.push(a);
+      } else {
+        const sKey = a.section || 'General';
+        let sec = sectionMap[sKey];
+        if (!sec) { sec = { section: sKey, subs: [], subMap: {} }; sectionMap[sKey] = sec; sections.push(sec); }
+        const subKey = a.sub || '';
+        let sub = sec.subMap[subKey];
+        if (!sub) { sub = { sub: subKey, items: [] }; sec.subMap[subKey] = sub; sec.subs.push(sub); }
+        sub.items.push(a);
+      }
+    }
+    return sections;
+  }
+
+  const groupedFiltered = groupBySectionSub(filtered);
 
   return (
     <div className="stagger p-8 max-w-5xl">
@@ -220,7 +351,8 @@ export default function Dashboard() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 bg-fog rounded-lg divide-x divide-tint overflow-hidden mb-10">
+          <div className="grid grid-cols-2 md:grid-cols-5 bg-fog rounded-lg divide-x divide-tint overflow-hidden mb-10">
+            <Stat label="Open tasks" value={openTasksCount} />
             <Stat label="Awaited from clients" value={totalOutstanding} active={filter === 'awaited'} onClick={() => setFilter(filter === 'awaited' ? 'all' : 'awaited')} />
             <Stat label="To review" value={toReview} active={filter === 'review'} onClick={() => setFilter(filter === 'review' ? 'all' : 'review')} />
             <Stat label="Flagged" value={flaggedCount} active={filter === 'flagged'} onClick={() => setFilter(filter === 'flagged' ? 'all' : 'flagged')} />
@@ -229,49 +361,78 @@ export default function Dashboard() {
 
           <section className="mb-8">
             <h2 className="font-serif text-xl font-medium text-ink mb-3">Clients</h2>
-            <PortfolioTable rows={rows} navigate={navigate} />
+            <ClientsTable rows={rows} navigate={navigate} />
           </section>
 
           <section>
-            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <div className="flex items-start justify-between mb-3 flex-wrap gap-2">
               <div>
                 <h2 className="font-serif text-xl font-medium text-ink">Needs attention</h2>
                 <p className="text-xs text-slate-500 mt-0.5">Awaited, waiting for review, or sitting too long. Close things right here.</p>
               </div>
-              <div className="flex gap-1 flex-wrap">
-                {FILTERS.map(([k, l, n]) => (
-                  <button key={k} onClick={() => setFilter(k)} className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${filter === k ? 'bg-deep text-paper border-deep' : 'text-ink border-tint hover:bg-fog'}`}>
-                    {l} <span className={filter === k ? 'text-tint' : 'text-slate-400'}>{n}</span>
-                  </button>
-                ))}
-              </div>
+            </div>
+            {/* Firm filter dropdown */}
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
+              <select
+                value={firmFilter}
+                onChange={(e) => { setFirmFilter(e.target.value); setFilter('all'); }}
+                className="text-xs px-2.5 py-1.5 rounded-lg border border-tint bg-paper focus:outline-none focus:border-green text-ink"
+              >
+                {firmOptions.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+              </select>
+            </div>
+            {/* Status filter chips */}
+            <div className="flex gap-1 flex-wrap mb-3">
+              {FILTERS.map(([k, l, n]) => (
+                <button key={k} onClick={() => setFilter(k)} className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${filter === k ? 'bg-deep text-paper border-deep' : 'text-ink border-tint hover:bg-fog'}`}>
+                  {l} <span className={filter === k ? 'text-tint' : 'text-slate-400'}>{n}</span>
+                </button>
+              ))}
             </div>
             {filtered.length === 0 ? (
               <p className="text-sm text-slate-400 py-6 px-1">Nothing here. Everything's either complete or moving.</p>
             ) : (
-              <div className="bg-paper border border-tint rounded-xl divide-y divide-tint/60">
-                {filtered.slice(0, 80).map((a) => a.kind === 'file' ? (
-                  <div key={a.f.id} className={`pl-3 pr-4 py-2.5 flex items-center gap-3 hover:bg-fog border-l-4 ${edgeCls(a.tier)}`}>
-                    <div className="flex-1 min-w-0 cursor-pointer" onClick={() => navigate(`/engagements/${a.e.id}`)}>
-                      <div className="text-sm text-ink truncate">{a.f.filename || a.f.name}</div>
-                      <div className="text-xs text-slate-400 truncate">Unmatched file · {a.client?.name} · FY{a.e.year}{a.who ? ` · ${a.who}` : ''}</div>
+              <div className="space-y-4">
+                {groupedFiltered.map((sec) => (
+                  <div key={sec.section} className="bg-paper border border-tint rounded-xl overflow-hidden">
+                    <div className="px-4 py-2 bg-fog/60 border-b border-tint">
+                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{sec.section}</span>
                     </div>
-                    <span className="text-xs text-slate-400 tabular-nums w-14 text-right shrink-0">{ageLabel(a.age)}</span>
-                    <button onClick={() => navigate(`/engagements/${a.e.id}`)} className="text-xs px-2 py-1 rounded-md text-green hover:bg-fog border border-tint shrink-0">Match</button>
-                  </div>
-                ) : (
-                  <div key={a.it.id} className={`pl-3 pr-4 py-2.5 flex items-center gap-3 hover:bg-fog border-l-4 ${edgeCls(a.tier)}`}>
-                    <div className="flex-1 min-w-0 cursor-pointer" onClick={() => navigate(`/engagements/${a.e.id}`)}>
-                      <div className="text-sm text-ink truncate">{a.it.p}</div>
-                      <div className="text-xs text-slate-400 truncate">
-                        {isAdhoc(a.it) ? 'Ad-hoc · ' : ''}{a.client?.name} · FY{a.e.year}{a.who ? ` · ${a.who}` : ''}{a.it.due ? ` · due ${a.it.due}` : ''}
+                    {sec.subs.map((subGroup) => (
+                      <div key={subGroup.sub}>
+                        {subGroup.sub && (
+                          <div className="px-4 py-1.5 bg-fog/30 border-b border-tint/40">
+                            <span className="text-xs text-slate-400 font-medium">{subGroup.sub}</span>
+                          </div>
+                        )}
+                        <div className="divide-y divide-tint/60">
+                          {subGroup.items.map((a) => a.kind === 'file' ? (
+                            <div key={a.f.id} className={`pl-3 pr-4 py-2.5 flex items-center gap-3 hover:bg-fog border-l-4 ${edgeCls(a.tier)}`}>
+                              <div className="flex-1 min-w-0 cursor-pointer" onClick={() => navigate(`/engagements/${a.e.id}`)}>
+                                <div className="text-sm text-ink truncate">{a.f.filename || a.f.name}</div>
+                                <div className="text-xs text-slate-400 truncate">Unmatched file · {a.client?.name} · FY{a.e.year}{a.who ? ` · ${a.who}` : ''}</div>
+                              </div>
+                              <span className="text-xs text-slate-400 tabular-nums w-14 text-right shrink-0">{ageLabel(a.age)}</span>
+                              <button onClick={() => navigate(`/engagements/${a.e.id}`)} className="text-xs px-2 py-1 rounded-md text-green hover:bg-fog border border-tint shrink-0">Match</button>
+                            </div>
+                          ) : (
+                            <div key={a.it.id} className={`pl-3 pr-4 py-2.5 flex items-center gap-3 hover:bg-fog border-l-4 ${edgeCls(a.tier)}`}>
+                              <div className="flex-1 min-w-0 cursor-pointer" onClick={() => navigate(`/engagements/${a.e.id}`)}>
+                                <div className="text-sm text-ink truncate">{a.it.p}</div>
+                                <div className="text-xs text-slate-400 truncate">
+                                  {isAdhoc(a.it) ? 'Ad-hoc · ' : ''}{a.client?.name} · FY{a.e.year}{a.who ? ` · ${a.who}` : ''}{a.it.due ? ` · due ${a.it.due}` : ''}
+                                </div>
+                              </div>
+                              <span className={`text-xs px-2 py-0.5 rounded-full border shrink-0 ${statusStyle(a.it)}`}>{statusLabel(a.it)}</span>
+                              <span className="text-xs text-slate-400 tabular-nums w-14 text-right shrink-0">{a.age != null ? ageLabel(a.age) : '—'}</span>
+                              {(a.review || isAdhoc(a.it)) && (
+                                <button onClick={() => complete(a.it.id)} className="text-xs px-2 py-1 rounded-md text-green hover:bg-fog border border-tint shrink-0">Complete</button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                    <span className={`text-xs px-2 py-0.5 rounded-full border shrink-0 ${statusStyle(a.it)}`}>{statusLabel(a.it)}</span>
-                    <span className="text-xs text-slate-400 tabular-nums w-14 text-right shrink-0">{a.age != null ? ageLabel(a.age) : '—'}</span>
-                    {(a.review || isAdhoc(a.it)) && (
-                      <button onClick={() => complete(a.it.id)} className="text-xs px-2 py-1 rounded-md text-green hover:bg-fog border border-tint shrink-0">Complete</button>
-                    )}
+                    ))}
                   </div>
                 ))}
               </div>
