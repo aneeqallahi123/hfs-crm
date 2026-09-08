@@ -10,12 +10,50 @@ import {
   noProgressDays, ageLabel, statusLabel, statusStyle, withStatus, RANK,
 } from '../lib/metrics.js';
 
+const KPI_DESCRIPTIONS = {
+  'Open tasks': 'Total number of tasks across all clients that are currently in progress or not yet started — anything that hasn\'t been completed or marked N/A.',
+  'Awaited from clients': 'Documents or information that have been requested from clients and are still outstanding — the ball is in the client\'s court.',
+  'To review': 'Items submitted by clients or staff that are sitting in your queue waiting to be reviewed and signed off.',
+  'Flagged': 'Tasks that have been escalated or flagged as needing immediate attention due to age, risk, or stalling.',
+  'Files to match': 'Files received in the inbox that haven\'t yet been matched to a specific checklist item or engagement task.',
+};
+
+function InfoIcon({ label }) {
+  const [show, setShow] = useState(false);
+  const desc = KPI_DESCRIPTIONS[label] || '';
+  if (!desc) return null;
+  return (
+    <span className="relative inline-flex ml-1.5 align-middle">
+      <button
+        onMouseEnter={() => setShow(true)}
+        onMouseLeave={() => setShow(false)}
+        onFocus={() => setShow(true)}
+        onBlur={() => setShow(false)}
+        className="w-4 h-4 rounded-full border border-slate-300 text-slate-400 text-[10px] flex items-center justify-center hover:border-green hover:text-green transition-colors focus:outline-none"
+        tabIndex={-1}
+        aria-label={`Info: ${label}`}
+      >
+        i
+      </button>
+      {show && (
+        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 text-xs bg-ink text-paper rounded-lg px-3 py-2 shadow-xl z-50 pointer-events-none leading-relaxed" role="tooltip">
+          {desc}
+          <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-ink" />
+        </span>
+      )}
+    </span>
+  );
+}
+
 function Stat({ label, value, onClick, active }) {
   const shown = useCountUp(value);
   const inner = (
     <>
       <div className={`text-[40px] leading-[1.1] font-medium tabular-nums tracking-[-0.02em] ${value ? 'text-green' : 'text-slate-400'}`}>{shown}</div>
-      <div className="text-sm text-slate-600 mt-2">{label}</div>
+      <div className="text-sm text-slate-600 mt-2 flex items-center gap-0.5">
+        {label}
+        <InfoIcon label={label} />
+      </div>
     </>
   );
   if (!onClick) return <div className="px-6 py-6">{inner}</div>;
@@ -30,12 +68,19 @@ function edgeCls(tier) {
   return tier ? ({ watch: 'border-tint', flag: 'border-green', urgent: 'border-deep' })[tier] : 'border-transparent';
 }
 
-// Groups engagements by client, with collapsible year rows and search
+function dueLabel(daysLeft, pct) {
+  if (pct === 100) return '—';
+  if (daysLeft == null) return null;
+  if (daysLeft < 0) return `${-daysLeft}d overdue`;
+  if (daysLeft === 0) return 'Due today';
+  return `In ${daysLeft}d`;
+}
+
 function ClientsTable({ rows, navigate }) {
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState({});
+  const [sortKey, setSortKey] = useState('health'); // health | name | awaited | due
 
-  // Group rows by clientId
   const grouped = [];
   const seen = {};
   for (const row of rows) {
@@ -54,103 +99,165 @@ function ClientsTable({ rows, navigate }) {
     setExpanded((prev) => ({ ...prev, [cid]: !prev[cid] }));
   }
 
-  // Sort: worst health first
+  // Aggregate metrics per client group
+  function agg(cRows) {
+    const totalAwaited = cRows.reduce((s, r) => s + (r.m.outstandingCount || 0), 0);
+    const totalReview = cRows.reduce((s, r) => s + (r.m.review || 0), 0);
+    // Nearest upcoming deadline (min daysLeft that isn't null, not overdue pct=100)
+    const dues = cRows.map((r) => r.m.daysLeft).filter((d) => d != null);
+    const nearestDue = dues.length ? Math.min(...dues) : null;
+    // Worst health
+    const rank = (m) => (m.pct === 100 ? -1 : m.worst ? RANK[m.worst] : 0);
+    const worstRow = cRows.slice().sort((a, b) => rank(b.m) - rank(a.m))[0];
+    return { totalAwaited, totalReview, nearestDue, worstRow };
+  }
+
   const rank = (m) => (m.pct === 100 ? -1 : m.worst ? RANK[m.worst] : 0);
   const sortedGrouped = filtered.slice().sort((a, b) => {
+    if (sortKey === 'name') return (a.client?.name || '').localeCompare(b.client?.name || '');
+    if (sortKey === 'awaited') return b.rows.reduce((s, r) => s + (r.m.outstandingCount || 0), 0) - a.rows.reduce((s, r) => s + (r.m.outstandingCount || 0), 0);
+    if (sortKey === 'due') {
+      const da = Math.min(...a.rows.map((r) => r.m.daysLeft ?? 9999));
+      const db = Math.min(...b.rows.map((r) => r.m.daysLeft ?? 9999));
+      return da - db;
+    }
+    // default: health (worst first)
     const bestA = Math.max(...a.rows.map((r) => rank(r.m)));
     const bestB = Math.max(...b.rows.map((r) => rank(r.m)));
     return bestB - bestA;
   });
 
+  function SortBtn({ col, label }) {
+    return (
+      <button onClick={() => setSortKey(col)} className={`flex items-center gap-1 transition-colors ${sortKey === col ? 'text-green' : 'hover:text-ink'}`}>
+        {label}
+        {sortKey === col && <span className="text-[9px]">▼</span>}
+      </button>
+    );
+  }
+
   return (
     <div>
-      <div className="mb-2">
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search clients…"
-          className="w-full sm:w-64 text-sm px-3 py-1.5 rounded-lg border border-tint bg-paper focus:outline-none focus:border-green placeholder:text-slate-400"
-        />
+      <div className="mb-3 flex items-center gap-3">
+        <div className="relative flex-1 max-w-xs">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm pointer-events-none">⌕</span>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search clients…"
+            className="w-full text-sm pl-8 pr-3 py-1.5 rounded-lg border border-tint bg-paper focus:outline-none focus:border-green placeholder:text-slate-400 transition-colors"
+          />
+        </div>
+        {search && (
+          <button onClick={() => setSearch('')} className="text-xs text-slate-400 hover:text-ink transition-colors">Clear</button>
+        )}
+        <span className="text-xs text-slate-400 ml-auto">{sortedGrouped.length} client{sortedGrouped.length !== 1 ? 's' : ''}</span>
       </div>
-      <div className="bg-paper border border-tint rounded-xl overflow-hidden max-h-[500px] overflow-y-auto">
-        <table className="w-full text-sm">
-          <thead className="sticky top-0 z-10 bg-fog/95">
+      <div className="bg-paper border border-tint rounded-xl overflow-hidden" style={{ maxHeight: 'calc(100vh - 280px)', minHeight: 300, overflowY: 'auto' }}>
+        <table className="w-full text-sm border-collapse">
+          <thead className="sticky top-0 z-10 bg-fog/98 backdrop-blur-sm">
             <tr className="text-left font-mono text-[11px] text-slate-500 border-b border-tint">
-              <th className="px-4 py-2.5 font-medium">Client</th>
-              <th className="px-4 py-2.5 font-medium">FY</th>
-              <th className="px-4 py-2.5 font-medium w-40">Progress</th>
-              <th className="px-4 py-2.5 font-medium text-right">Awaited</th>
+              <th className="px-4 py-2.5 font-medium">
+                <SortBtn col="name" label="Client" />
+              </th>
+              <th className="px-4 py-2.5 font-medium text-right">
+                <SortBtn col="awaited" label="Awaited" />
+              </th>
               <th className="px-4 py-2.5 font-medium text-right">To review</th>
-              <th className="px-4 py-2.5 font-medium text-right">Due</th>
-              <th className="px-4 py-2.5 font-medium">Health</th>
+              <th className="px-4 py-2.5 font-medium text-right">
+                <SortBtn col="due" label="Due" />
+              </th>
+              <th className="px-4 py-2.5 font-medium">
+                <SortBtn col="health" label="Health" />
+              </th>
             </tr>
           </thead>
           <tbody>
             {sortedGrouped.length === 0 && (
-              <tr><td colSpan={7} className="px-4 py-6 text-sm text-slate-400">No clients found.</td></tr>
+              <tr>
+                <td colSpan={5} className="px-4 py-10 text-sm text-slate-400 text-center">
+                  {search ? `No clients matching "${search}"` : 'No clients found.'}
+                </td>
+              </tr>
             )}
             {sortedGrouped.map(({ client, clientId, rows: cRows }) => {
               const isOpen = expanded[clientId];
-              // Show the most recent (highest year) engagement as the summary row
-              const sorted = cRows.slice().sort((a, b) => (b.e.year > a.e.year ? 1 : -1));
-              const primary = sorted[0];
+              const { totalAwaited, totalReview, nearestDue, worstRow } = agg(cRows);
+              const h = healthOf(worstRow.m);
               const hasMultiple = cRows.length > 1;
+              // Sort years: latest first
+              const sortedYears = cRows.slice().sort((a, b) => (b.e.year > a.e.year ? 1 : -1));
+              const nearestPct = nearestDue != null && cRows.some((r) => r.m.daysLeft === nearestDue && r.m.pct < 100) ? (cRows.find((r) => r.m.daysLeft === nearestDue)?.m.pct ?? 100) : 100;
+              const dueTxt = dueLabel(nearestDue, nearestPct);
+              const dueUrgent = nearestDue != null && nearestDue < 0 && nearestPct < 100;
+              const dueSoon = nearestDue != null && nearestDue >= 0 && nearestDue <= 7 && nearestPct < 100;
+
               return (
                 <React.Fragment key={clientId}>
-                  {/* Client summary / primary row */}
                   <tr
-                    onClick={() => hasMultiple ? toggle(clientId) : navigate(`/engagements/${primary.e.id}`)}
-                    className="border-b border-tint last:border-0 hover:bg-fog cursor-pointer transition-colors"
+                    onClick={() => hasMultiple ? toggle(clientId) : navigate(`/engagements/${sortedYears[0].e.id}`)}
+                    className={`border-b border-tint last:border-0 cursor-pointer transition-all duration-150 ${isOpen ? 'bg-fog/40' : 'hover:bg-fog/60'}`}
                   >
                     <td className="px-4 py-3 font-medium text-ink">
-                      <span className="flex items-center gap-1.5">
+                      <span className="flex items-center gap-2">
                         {hasMultiple && (
-                          <span className={`text-slate-400 text-xs transition-transform ${isOpen ? 'rotate-90' : ''} inline-block`}>▶</span>
+                          <span className={`text-slate-400 text-[10px] transition-transform duration-200 inline-block ${isOpen ? 'rotate-90' : ''}`}>▶</span>
                         )}
-                        {client?.name}
-                        {primary.e.incharge && <span className="ml-1 text-xs text-slate-400 font-normal">{primary.e.incharge}</span>}
+                        {!hasMultiple && <span className="w-3.5" />}
+                        <span>{client?.name}</span>
+                        {cRows[0].e.incharge && <span className="text-xs text-slate-400 font-normal">{cRows[0].e.incharge}</span>}
+                        {hasMultiple && (
+                          <span className="text-[10px] text-slate-400 font-normal tabular-nums">{cRows.length} yrs</span>
+                        )}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-slate-500 tabular-nums">{primary.e.year}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 h-1.5 bg-fog rounded-full overflow-hidden">
-                          <div className="h-full bg-green rounded-full" style={{ width: primary.m.pct + '%' }} />
-                        </div>
-                        <span className="text-xs text-slate-500 tabular-nums w-8">{primary.m.pct}%</span>
-                      </div>
+                    <td className="px-4 py-3 text-right tabular-nums">
+                      {totalAwaited ? <span className="text-ink font-medium">{totalAwaited}</span> : <span className="text-slate-300">0</span>}
                     </td>
-                    <td className="px-4 py-3 text-right tabular-nums text-ink">{primary.m.outstandingCount || <span className="text-slate-300">0</span>}</td>
-                    <td className="px-4 py-3 text-right tabular-nums text-ink">{primary.m.review || <span className="text-slate-300">0</span>}</td>
-                    <td className={`px-4 py-3 text-right tabular-nums ${primary.m.daysLeft != null && primary.m.daysLeft < 0 && primary.m.pct < 100 ? 'text-deep font-medium' : primary.m.daysLeft != null && primary.m.daysLeft <= 7 && primary.m.pct < 100 ? 'text-green' : 'text-slate-500'}`}>
-                      {primary.m.pct === 100 ? '—' : primary.m.daysLeft == null ? <span className="text-slate-300">—</span> : primary.m.daysLeft < 0 ? `${-primary.m.daysLeft}d over` : primary.m.daysLeft === 0 ? 'today' : `${primary.m.daysLeft}d`}
+                    <td className="px-4 py-3 text-right tabular-nums">
+                      {totalReview ? <span className="text-ink font-medium">{totalReview}</span> : <span className="text-slate-300">0</span>}
+                    </td>
+                    <td className={`px-4 py-3 text-right tabular-nums text-xs ${dueUrgent ? 'text-deep font-semibold' : dueSoon ? 'text-green font-medium' : 'text-slate-500'}`}>
+                      {dueTxt || <span className="text-slate-300">—</span>}
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`text-xs px-2 py-0.5 rounded-full border ${healthOf(primary.m).cls}`}>{healthOf(primary.m).label}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full border ${h.cls}`}>{h.label}</span>
                     </td>
                   </tr>
-                  {/* Additional year rows (shown when expanded) */}
-                  {hasMultiple && isOpen && sorted.slice(1).map(({ e, m }) => {
-                    const h = healthOf(m);
+
+                  {/* Year rows — animate open/close */}
+                  {hasMultiple && sortedYears.map(({ e, m }, idx) => {
+                    const yh = healthOf(m);
+                    const yDue = dueLabel(m.daysLeft, m.pct);
+                    const yDueUrgent = m.daysLeft != null && m.daysLeft < 0 && m.pct < 100;
+                    const yDueSoon = m.daysLeft != null && m.daysLeft >= 0 && m.daysLeft <= 7 && m.pct < 100;
                     return (
-                      <tr key={e.id} onClick={() => navigate(`/engagements/${e.id}`)} className="border-b border-tint last:border-0 hover:bg-fog/60 cursor-pointer transition-colors bg-fog/30">
-                        <td className="px-4 py-2.5 text-slate-400 pl-10 text-xs">↳ FY {e.year}</td>
-                        <td className="px-4 py-2.5 text-slate-400 tabular-nums text-xs">{e.year}</td>
-                        <td className="px-4 py-2.5">
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1 h-1.5 bg-tint rounded-full overflow-hidden">
-                              <div className="h-full bg-green/60 rounded-full" style={{ width: m.pct + '%' }} />
-                            </div>
-                            <span className="text-xs text-slate-400 tabular-nums w-8">{m.pct}%</span>
-                          </div>
+                      <tr
+                        key={e.id}
+                        onClick={() => navigate(`/engagements/${e.id}`)}
+                        className={`border-b border-tint/60 last:border-0 cursor-pointer transition-all duration-150 bg-fog/20 hover:bg-fog/50 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none h-0'}`}
+                        style={{
+                          display: isOpen ? undefined : 'none',
+                        }}
+                      >
+                        <td className="px-4 py-2.5 text-slate-500 pl-10">
+                          <span className="flex items-center gap-2">
+                            <span className="text-slate-300 text-xs">└</span>
+                            <span className="text-xs font-medium">FY {e.year}</span>
+                            {idx === 0 && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-green/10 text-green border border-green/20 font-medium">latest</span>}
+                          </span>
                         </td>
-                        <td className="px-4 py-2.5 text-right tabular-nums text-slate-500 text-xs">{m.outstandingCount || <span className="text-slate-300">0</span>}</td>
-                        <td className="px-4 py-2.5 text-right tabular-nums text-slate-500 text-xs">{m.review || <span className="text-slate-300">0</span>}</td>
-                        <td className={`px-4 py-2.5 text-right tabular-nums text-xs ${m.daysLeft != null && m.daysLeft < 0 && m.pct < 100 ? 'text-deep' : 'text-slate-400'}`}>
-                          {m.pct === 100 ? '—' : m.daysLeft == null ? <span className="text-slate-300">—</span> : m.daysLeft < 0 ? `${-m.daysLeft}d over` : m.daysLeft === 0 ? 'today' : `${m.daysLeft}d`}
+                        <td className="px-4 py-2.5 text-right tabular-nums text-xs">
+                          {m.outstandingCount ? <span className="text-slate-600">{m.outstandingCount}</span> : <span className="text-slate-300">0</span>}
+                        </td>
+                        <td className="px-4 py-2.5 text-right tabular-nums text-xs">
+                          {m.review ? <span className="text-slate-600">{m.review}</span> : <span className="text-slate-300">0</span>}
+                        </td>
+                        <td className={`px-4 py-2.5 text-right tabular-nums text-xs ${yDueUrgent ? 'text-deep font-semibold' : yDueSoon ? 'text-green' : 'text-slate-400'}`}>
+                          {yDue || <span className="text-slate-300">—</span>}
                         </td>
                         <td className="px-4 py-2.5">
-                          <span className={`text-xs px-2 py-0.5 rounded-full border ${h.cls}`}>{h.label}</span>
+                          <span className={`text-xs px-2 py-0.5 rounded-full border ${yh.cls}`}>{yh.label}</span>
                         </td>
                       </tr>
                     );
@@ -173,8 +280,6 @@ export default function Dashboard() {
   const [itemsByEng, setItemsByEng] = useState({});
   const [inboxByEng, setInboxByEng] = useState({});
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all');
-  const [firmFilter, setFirmFilter] = useState('all'); // for Needs Attention section
   const navigate = useNavigate();
   const td = today();
 
@@ -203,17 +308,6 @@ export default function Dashboard() {
 
   useEffect(() => { load(); }, []);
 
-  async function complete(itemId) {
-    try {
-      const patch = withStatus({ status: itemsFlat.find((x) => x.id === itemId)?.status }, 'Completed');
-      await api.items.update(itemId, patch);
-      toast('Marked complete', 'success');
-      load();
-    } catch (err) {
-      toast(err.message, 'error');
-    }
-  }
-
   if (loading) return <div className="stagger p-8 max-w-5xl"><div className="text-sm text-slate-400">Loading…</div></div>;
 
   const rows = engagements.map((e) => {
@@ -222,121 +316,25 @@ export default function Dashboard() {
     const m = engMetrics({ ...e, items }, inboxByEng[e.id] || []);
     return { e, client, items, m };
   });
-  const itemsFlat = rows.flatMap((r) => r.items);
 
   if (user?.role === 'student') return <StudentDashboardBody rows={rows} toast={toast} reload={load} />;
 
   const totalOutstanding = rows.reduce((s, r) => s + r.m.outstandingCount, 0);
   const toReview = rows.reduce((s, r) => s + r.m.review, 0);
-  // Files to match: only non-irrelevant, unmatched files
   const filesToMatch = rows.reduce((s, r) => s + (inboxByEng[r.e.id] || []).filter((f) => !f.assignedItemId && f.status !== 'Irrelevant').length, 0);
   const flaggedCount = rows.reduce((s, r) => s + r.items.filter((it) => it.headIncluded && progressTier(it)).length, 0);
-  // Open tasks: Not Requested (requestable, No Progress) + Not Started (non-requestable, No Progress)
   const openTasksCount = rows.reduce((s, r) => s + r.items.filter((it) => it.headIncluded && it.status === 'No progress').length, 0);
-
-  // Build attention list — only active inbox files (not Irrelevant)
-  const attention = [];
-  for (const { e, client, items } of rows) {
-    for (const it of items) {
-      if (!it.headIncluded || it.status === 'Completed' || it.status === 'NA') continue;
-      const tier = progressTier(it);
-      const awaited = it.requestable && isAwaited(it);
-      const review = it.status === 'Under Review';
-      const notStarted = !it.requestable && it.status === 'No progress';
-      const notRequested = it.requestable && it.status === 'No progress';
-      if (!tier && !awaited && !review && !notStarted && !notRequested) continue;
-      const age = review ? daysBetweenSafe(it.dateReceived, td) : awaited ? daysBetweenSafe(it.queried ? it.dateQueried : it.dateRequested, td) : noProgressDays(it);
-      attention.push({ kind: 'doc', e, client, it, tier, awaited, review, notStarted, notRequested, age, who: it.owner || e.incharge || '', section: it.section || '', sub: it.sub || '' });
-    }
-    for (const f of (inboxByEng[e.id] || [])) {
-      if (f.assignedItemId || f.status === 'Irrelevant') continue;
-      const age = daysBetweenSafe(f.receivedAt ? f.receivedAt.slice(0, 10) : null, td);
-      attention.push({ kind: 'file', e, client, f, tier: age >= 10 ? 'flag' : age >= 3 ? 'watch' : null, age, who: e.incharge || '' });
-    }
-  }
-
-  const isMine = (a) => user?.name && a.who === user.name;
-
-  // Firm filter options
-  const firmOptions = [{ id: 'all', label: 'All firms' }];
-  const seenClients = new Set();
-  for (const { e, client } of rows) {
-    if (!seenClients.has(e.clientId)) {
-      seenClients.add(e.clientId);
-      firmOptions.push({ id: e.clientId, label: client?.name || e.clientId });
-    }
-  }
-
-  const firmFiltered = firmFilter === 'all' ? attention : attention.filter((a) => a.e.clientId === firmFilter);
-
-  const filtered = firmFiltered.filter((a) => filter === 'all' ? true :
-    filter === 'mine' ? isMine(a) :
-    filter === 'awaited' ? a.kind === 'doc' && a.awaited :
-    filter === 'review' ? a.kind === 'doc' && a.review :
-    filter === 'flagged' ? !!a.tier :
-    filter === 'adhoc' ? a.kind === 'doc' && isAdhoc(a.it) :
-    filter === 'notStarted' ? a.kind === 'doc' && a.notStarted :
-    filter === 'notRequested' ? a.kind === 'doc' && a.notRequested :
-    filter === 'files' ? a.kind === 'file' : true
-  ).sort((a, b) => {
-    const ra = a.tier ? RANK[a.tier] : 0, rb = b.tier ? RANK[b.tier] : 0;
-    if (ra !== rb) return rb - ra;
-    return (b.age || 0) - (a.age || 0);
-  });
-
-  const FILTERS = [
-    ['all', 'Everything', firmFiltered.length],
-    ['mine', 'Mine', firmFiltered.filter(isMine).length],
-    ['awaited', 'Awaited', firmFiltered.filter((a) => a.kind === 'doc' && a.awaited).length],
-    ['review', 'To review', firmFiltered.filter((a) => a.kind === 'doc' && a.review).length],
-    ['flagged', 'Flagged', firmFiltered.filter((a) => !!a.tier).length],
-    ['adhoc', 'Ad-hoc', firmFiltered.filter((a) => a.kind === 'doc' && isAdhoc(a.it)).length],
-    ['notStarted', 'Not started', firmFiltered.filter((a) => a.kind === 'doc' && a.notStarted).length],
-    ['notRequested', 'Not requested', firmFiltered.filter((a) => a.kind === 'doc' && a.notRequested).length],
-    ['files', 'Files to match', firmFiltered.filter((a) => a.kind === 'file').length],
-  ];
-
   const overallPct = rows.length ? Math.round(rows.reduce((s, r) => s + r.m.pct, 0) / rows.length) : 0;
-
-  // Group filtered items by section > sub for categorized display
-  function groupBySectionSub(items) {
-    const sections = [];
-    const sectionMap = {};
-    for (const a of items) {
-      if (a.kind === 'file') {
-        let sec = sectionMap['__files__'];
-        if (!sec) { sec = { section: 'Unmatched Files', subs: [], subMap: {} }; sectionMap['__files__'] = sec; sections.push(sec); }
-        let sub = sec.subMap[''];
-        if (!sub) { sub = { sub: '', items: [] }; sec.subMap[''] = sub; sec.subs.push(sub); }
-        sub.items.push(a);
-      } else {
-        const sKey = a.section || 'General';
-        let sec = sectionMap[sKey];
-        if (!sec) { sec = { section: sKey, subs: [], subMap: {} }; sectionMap[sKey] = sec; sections.push(sec); }
-        const subKey = a.sub || '';
-        let sub = sec.subMap[subKey];
-        if (!sub) { sub = { sub: subKey, items: [] }; sec.subMap[subKey] = sub; sec.subs.push(sub); }
-        sub.items.push(a);
-      }
-    }
-    return sections;
-  }
-
-  const groupedFiltered = groupBySectionSub(filtered);
 
   return (
     <div className="stagger p-8 max-w-5xl">
-      <header className="mb-6 flex items-end justify-between gap-6">
+      <header className="mb-6 flex items-end gap-6">
         <div className="flex items-center gap-5">
           {rows.length > 0 && <ProgressRing pct={overallPct} />}
           <div>
             <h1 className="font-serif text-[32px] leading-[1.15] font-medium text-ink tracking-[-0.01em]">Overview</h1>
             <div className="mt-3 h-px w-12 bg-green" />
-            <p className="text-sm text-slate-500 mt-1">Where every client stands, then everything that is waiting on someone.</p>
           </div>
-        </div>
-        <div className="text-right">
-          <span className="font-mono text-[11px] text-slate-500">{new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</span>
         </div>
       </header>
 
@@ -353,90 +351,15 @@ export default function Dashboard() {
         <>
           <div className="grid grid-cols-2 md:grid-cols-5 bg-fog rounded-lg divide-x divide-tint overflow-hidden mb-10">
             <Stat label="Open tasks" value={openTasksCount} />
-            <Stat label="Awaited from clients" value={totalOutstanding} active={filter === 'awaited'} onClick={() => setFilter(filter === 'awaited' ? 'all' : 'awaited')} />
-            <Stat label="To review" value={toReview} active={filter === 'review'} onClick={() => setFilter(filter === 'review' ? 'all' : 'review')} />
-            <Stat label="Flagged" value={flaggedCount} active={filter === 'flagged'} onClick={() => setFilter(filter === 'flagged' ? 'all' : 'flagged')} />
-            <Stat label="Files to match" value={filesToMatch} active={filter === 'files'} onClick={() => setFilter(filter === 'files' ? 'all' : 'files')} />
+            <Stat label="Awaited from clients" value={totalOutstanding} />
+            <Stat label="To review" value={toReview} />
+            <Stat label="Flagged" value={flaggedCount} />
+            <Stat label="Files to match" value={filesToMatch} />
           </div>
 
-          <section className="mb-8">
+          <section>
             <h2 className="font-serif text-xl font-medium text-ink mb-3">Clients</h2>
             <ClientsTable rows={rows} navigate={navigate} />
-          </section>
-
-          <section>
-            <div className="flex items-start justify-between mb-3 flex-wrap gap-2">
-              <div>
-                <h2 className="font-serif text-xl font-medium text-ink">Needs attention</h2>
-                <p className="text-xs text-slate-500 mt-0.5">Awaited, waiting for review, or sitting too long. Close things right here.</p>
-              </div>
-            </div>
-            {/* Firm filter dropdown */}
-            <div className="flex items-center gap-2 mb-2 flex-wrap">
-              <select
-                value={firmFilter}
-                onChange={(e) => { setFirmFilter(e.target.value); setFilter('all'); }}
-                className="text-xs px-2.5 py-1.5 rounded-lg border border-tint bg-paper focus:outline-none focus:border-green text-ink"
-              >
-                {firmOptions.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
-              </select>
-            </div>
-            {/* Status filter chips */}
-            <div className="flex gap-1 flex-wrap mb-3">
-              {FILTERS.map(([k, l, n]) => (
-                <button key={k} onClick={() => setFilter(k)} className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${filter === k ? 'bg-deep text-paper border-deep' : 'text-ink border-tint hover:bg-fog'}`}>
-                  {l} <span className={filter === k ? 'text-tint' : 'text-slate-400'}>{n}</span>
-                </button>
-              ))}
-            </div>
-            {filtered.length === 0 ? (
-              <p className="text-sm text-slate-400 py-6 px-1">Nothing here. Everything's either complete or moving.</p>
-            ) : (
-              <div className="space-y-4">
-                {groupedFiltered.map((sec) => (
-                  <div key={sec.section} className="bg-paper border border-tint rounded-xl overflow-hidden">
-                    <div className="px-4 py-2 bg-fog/60 border-b border-tint">
-                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{sec.section}</span>
-                    </div>
-                    {sec.subs.map((subGroup) => (
-                      <div key={subGroup.sub}>
-                        {subGroup.sub && (
-                          <div className="px-4 py-1.5 bg-fog/30 border-b border-tint/40">
-                            <span className="text-xs text-slate-400 font-medium">{subGroup.sub}</span>
-                          </div>
-                        )}
-                        <div className="divide-y divide-tint/60">
-                          {subGroup.items.map((a) => a.kind === 'file' ? (
-                            <div key={a.f.id} className={`pl-3 pr-4 py-2.5 flex items-center gap-3 hover:bg-fog border-l-4 ${edgeCls(a.tier)}`}>
-                              <div className="flex-1 min-w-0 cursor-pointer" onClick={() => navigate(`/engagements/${a.e.id}`)}>
-                                <div className="text-sm text-ink truncate">{a.f.filename || a.f.name}</div>
-                                <div className="text-xs text-slate-400 truncate">Unmatched file · {a.client?.name} · FY{a.e.year}{a.who ? ` · ${a.who}` : ''}</div>
-                              </div>
-                              <span className="text-xs text-slate-400 tabular-nums w-14 text-right shrink-0">{ageLabel(a.age)}</span>
-                              <button onClick={() => navigate(`/engagements/${a.e.id}`)} className="text-xs px-2 py-1 rounded-md text-green hover:bg-fog border border-tint shrink-0">Match</button>
-                            </div>
-                          ) : (
-                            <div key={a.it.id} className={`pl-3 pr-4 py-2.5 flex items-center gap-3 hover:bg-fog border-l-4 ${edgeCls(a.tier)}`}>
-                              <div className="flex-1 min-w-0 cursor-pointer" onClick={() => navigate(`/engagements/${a.e.id}`)}>
-                                <div className="text-sm text-ink truncate">{a.it.p}</div>
-                                <div className="text-xs text-slate-400 truncate">
-                                  {isAdhoc(a.it) ? 'Ad-hoc · ' : ''}{a.client?.name} · FY{a.e.year}{a.who ? ` · ${a.who}` : ''}{a.it.due ? ` · due ${a.it.due}` : ''}
-                                </div>
-                              </div>
-                              <span className={`text-xs px-2 py-0.5 rounded-full border shrink-0 ${statusStyle(a.it)}`}>{statusLabel(a.it)}</span>
-                              <span className="text-xs text-slate-400 tabular-nums w-14 text-right shrink-0">{a.age != null ? ageLabel(a.age) : '—'}</span>
-                              {(a.review || isAdhoc(a.it)) && (
-                                <button onClick={() => complete(a.it.id)} className="text-xs px-2 py-1 rounded-md text-green hover:bg-fog border border-tint shrink-0">Complete</button>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            )}
           </section>
         </>
       )}
@@ -449,7 +372,7 @@ function daysBetweenSafe(a, b) {
   return Math.round((new Date(b) - new Date(a)) / 86400000);
 }
 
-// ---- Student view: only what's assigned to me ----
+// ---- Student view ----
 function StudentDashboardBody({ rows, toast, reload }) {
   const { user } = useAuth();
   const td = today();
@@ -501,17 +424,13 @@ function StudentDashboardBody({ rows, toast, reload }) {
 
   return (
     <div className="stagger p-8 max-w-5xl">
-      <header className="mb-6 flex items-end justify-between gap-6">
+      <header className="mb-6 flex items-end gap-6">
         <div className="flex items-center gap-5">
           {totalMine > 0 && <ProgressRing pct={myPct} />}
           <div>
             <h1 className="font-serif text-[32px] leading-[1.15] font-medium text-ink tracking-[-0.01em]">{greeting}, {firstName || 'there'}</h1>
             <div className="mt-3 h-px w-12 bg-green" />
-            <p className="text-sm text-slate-500 mt-1">Your tasks and clients — nothing assigned to anyone else shows here.</p>
           </div>
-        </div>
-        <div className="text-right">
-          <span className="font-mono text-[11px] text-slate-500">{new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</span>
         </div>
       </header>
 
