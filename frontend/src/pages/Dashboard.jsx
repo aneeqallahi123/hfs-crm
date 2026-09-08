@@ -59,7 +59,7 @@ function Stat({ label, value, onClick, active }) {
       <div className={`text-[30px] leading-none font-medium font-mono tabular-nums tracking-[-0.02em] ${value ? 'text-ink' : 'text-slate-300'}`}>
         {shown}
       </div>
-      <div className="text-[11px] uppercase tracking-[0.04em] text-slate-400 mt-2.5 flex items-center gap-1 leading-tight font-medium">
+      <div className="text-[11px] text-slate-400 mt-2.5 flex items-start gap-1 leading-tight font-medium">
         <span>{label}</span>
         <InfoIcon label={label} />
       </div>
@@ -149,7 +149,7 @@ function ClientsTable({ rows, navigate }) {
   function RColHeader({ col, label }) {
     const active = sortKey === col;
     return (
-      <th className="py-3 px-4 text-right text-[10px] font-medium tracking-[0.06em] uppercase">
+      <th className="py-3 px-4 text-right text-[11px] font-medium">
         <button
           onClick={() => setSortKey(col)}
           className={`inline-flex items-center gap-1 ml-auto transition-colors ${active ? 'text-green' : 'text-slate-400 hover:text-slate-600'}`}
@@ -165,7 +165,7 @@ function ClientsTable({ rows, navigate }) {
   function LColHeader({ col, label }) {
     const active = sortKey === col;
     return (
-      <th className="py-3 px-4 text-left text-[10px] font-medium tracking-[0.06em] uppercase">
+      <th className="py-3 px-4 text-left text-[11px] font-medium">
         <button
           onClick={() => setSortKey(col)}
           className={`inline-flex items-center gap-1 transition-colors ${active ? 'text-green' : 'text-slate-400 hover:text-slate-600'}`}
@@ -220,7 +220,7 @@ function ClientsTable({ rows, navigate }) {
             <tr>
               <LColHeader col="name" label="Client" />
               <RColHeader col="awaited" label="Awaited" />
-              <th className="py-3 px-4 text-right text-[10px] font-medium tracking-[0.06em] uppercase text-slate-400">Review</th>
+              <th className="py-3 px-4 text-right text-[11px] font-medium text-slate-400">Review</th>
               <RColHeader col="due" label="Due" />
               <LColHeader col="health" label="Health" />
             </tr>
