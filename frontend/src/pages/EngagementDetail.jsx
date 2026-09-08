@@ -1008,7 +1008,8 @@ export default function EngagementDetail() {
         setItems(prev => prev.map(it => (!it.owner || it.owner === prevIncharge) ? { ...it, owner: name } : it));
         try {
           await api.items.bulkUpdate(toReassign.map(it => ({ id: it.id, owner: name })));
-          toast(`Assigned ${toReassign.length} task${toReassign.length !== 1 ? 's' : ''} to ${name}`, 'success');
+          const visibleCount = toReassign.filter(it => it.headIncluded && it.status !== 'NA').length;
+          toast(`Assigned ${visibleCount} task${visibleCount !== 1 ? 's' : ''} to ${name}`, 'success');
         } catch (err) { toast(err.message, 'error'); load(); }
       }
     }
