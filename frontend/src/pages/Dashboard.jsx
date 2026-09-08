@@ -55,11 +55,11 @@ function InfoIcon({ label }) {
 function Stat({ label, value, onClick, active }) {
   const shown = useCountUp(value);
   const inner = (
-    <div className="px-6 py-6">
-      <div className={`text-[38px] leading-none font-semibold tabular-nums tracking-[-0.02em] ${value ? 'text-green' : 'text-slate-300'}`}>
+    <div className="px-5 py-5">
+      <div className={`text-[30px] leading-none font-medium font-mono tabular-nums tracking-[-0.02em] ${value ? 'text-ink' : 'text-slate-300'}`}>
         {shown}
       </div>
-      <div className="text-[13px] text-slate-500 mt-2.5 flex items-center gap-1 leading-tight">
+      <div className="text-[11px] uppercase tracking-[0.04em] text-slate-400 mt-2.5 flex items-center gap-1 leading-tight font-medium">
         <span>{label}</span>
         <InfoIcon label={label} />
       </div>
@@ -149,7 +149,7 @@ function ClientsTable({ rows, navigate }) {
   function RColHeader({ col, label }) {
     const active = sortKey === col;
     return (
-      <th className="py-3 px-4 text-right font-mono text-[11px] font-medium">
+      <th className="py-3 px-4 text-right text-[10px] font-medium tracking-[0.06em] uppercase">
         <button
           onClick={() => setSortKey(col)}
           className={`inline-flex items-center gap-1 ml-auto transition-colors ${active ? 'text-green' : 'text-slate-400 hover:text-slate-600'}`}
@@ -165,7 +165,7 @@ function ClientsTable({ rows, navigate }) {
   function LColHeader({ col, label }) {
     const active = sortKey === col;
     return (
-      <th className="py-3 px-4 text-left font-mono text-[11px] font-medium">
+      <th className="py-3 px-4 text-left text-[10px] font-medium tracking-[0.06em] uppercase">
         <button
           onClick={() => setSortKey(col)}
           className={`inline-flex items-center gap-1 transition-colors ${active ? 'text-green' : 'text-slate-400 hover:text-slate-600'}`}
@@ -220,7 +220,7 @@ function ClientsTable({ rows, navigate }) {
             <tr>
               <LColHeader col="name" label="Client" />
               <RColHeader col="awaited" label="Awaited" />
-              <th className="py-3 px-4 text-right font-mono text-[11px] font-medium text-slate-400">Review</th>
+              <th className="py-3 px-4 text-right text-[10px] font-medium tracking-[0.06em] uppercase text-slate-400">Review</th>
               <RColHeader col="due" label="Due" />
               <LColHeader col="health" label="Health" />
             </tr>
@@ -243,11 +243,11 @@ function ClientsTable({ rows, navigate }) {
                   {/* Client header row — name only, no data values */}
                   <tr
                     onClick={() => toggle(clientId)}
-                    className={`border-b border-tint cursor-pointer select-none transition-colors duration-100 ${isOpen ? 'bg-fog/60' : 'hover:bg-fog/40'}`}
+                    className={`border-b border-tint cursor-pointer select-none transition-colors duration-100 ${isOpen ? 'bg-fog' : 'hover:bg-fog/50'}`}
                   >
                     <td className="px-4 py-3" colSpan={5}>
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className={`shrink-0 text-[9px] text-slate-400 transition-transform duration-200 inline-block ${isOpen ? 'rotate-90' : ''}`}>
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className={`shrink-0 w-4 h-4 rounded border border-tint flex items-center justify-center text-[8px] text-slate-400 transition-all duration-200 ${isOpen ? 'rotate-90 bg-tint' : 'bg-fog'}`}>
                           ▶
                         </span>
                         <span className="font-medium text-ink truncate">{client?.name}</span>
@@ -268,32 +268,33 @@ function ClientsTable({ rows, navigate }) {
                       <tr
                         key={e.id}
                         onClick={() => navigate(`/engagements/${e.id}`)}
-                        className="border-b border-tint/60 last:border-b-0 cursor-pointer bg-white hover:bg-fog/30 transition-colors duration-100"
+                        className="border-b border-tint/50 last:border-b-0 cursor-pointer bg-paper hover:bg-fog/40 transition-colors duration-100"
+                        style={{ animation: 'slideDown .18s cubic-bezier(.2,.7,.2,1) both' }}
                       >
                         {/* Year label */}
                         <td className="px-4 py-2.5 pl-9">
                           <div className="flex items-center gap-2">
-                            <span className="text-slate-300 text-xs shrink-0">└</span>
-                            <span className="text-sm text-slate-700 font-medium">FY {e.year}</span>
+                            <span className="text-tint text-xs shrink-0">└</span>
+                            <span className="text-sm text-slate-700 font-medium font-mono">FY {e.year}</span>
                             {idx === 0 && (
-                              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-green/10 text-green border border-green/20 font-semibold tracking-wide uppercase">latest</span>
+                              <span className="text-[9px] px-1.5 py-px rounded bg-tint text-green font-semibold tracking-[0.06em] uppercase">latest</span>
                             )}
                           </div>
                         </td>
                         {/* Awaited */}
-                        <td className="px-4 py-2.5 text-right tabular-nums text-sm">
+                        <td className="px-4 py-2.5 text-right tabular-nums text-sm font-mono">
                           {m.outstandingCount
                             ? <span className="text-ink font-medium">{m.outstandingCount}</span>
-                            : <span className="text-slate-300">—</span>}
+                            : <span className="text-tint">—</span>}
                         </td>
                         {/* Review */}
-                        <td className="px-4 py-2.5 text-right tabular-nums text-sm">
+                        <td className="px-4 py-2.5 text-right tabular-nums text-sm font-mono">
                           {m.review
                             ? <span className="text-ink font-medium">{m.review}</span>
-                            : <span className="text-slate-300">—</span>}
+                            : <span className="text-tint">—</span>}
                         </td>
                         {/* Due */}
-                        <td className={`px-4 py-2.5 text-right tabular-nums text-xs ${dueCls(m.daysLeft, m.pct)}`}>
+                        <td className={`px-4 py-2.5 text-right tabular-nums text-xs font-mono ${dueCls(m.daysLeft, m.pct)}`}>
                           {dueLabel(m.daysLeft, m.pct)}
                         </td>
                         {/* Health */}
@@ -381,7 +382,7 @@ export default function Dashboard() {
         {rows.length > 0 && <ProgressRing pct={overallPct} />}
         <div>
           <h1 className="font-serif text-[30px] leading-none font-medium text-ink tracking-[-0.01em]">Overview</h1>
-          <div className="mt-3 h-px w-10 bg-green" />
+          <div className="mt-3 h-0.5 w-10 bg-green rounded-sm" />
         </div>
       </header>
 
@@ -487,7 +488,7 @@ function StudentDashboardBody({ rows, toast, reload }) {
         {totalMine > 0 && <ProgressRing pct={myPct} />}
         <div>
           <h1 className="font-serif text-[30px] leading-none font-medium text-ink tracking-[-0.01em]">{greeting}, {firstName || 'there'}</h1>
-          <div className="mt-3 h-px w-10 bg-green" />
+          <div className="mt-3 h-0.5 w-10 bg-green rounded-sm" />
         </div>
       </header>
 
