@@ -378,12 +378,9 @@ export default function Dashboard() {
 
   return (
     <div className="stagger p-8 max-w-5xl">
-      <header className="mb-8 flex items-center gap-5">
-        {rows.length > 0 && <ProgressRing pct={overallPct} />}
-        <div>
-          <h1 className="font-serif text-[30px] leading-none font-medium text-ink tracking-[-0.01em]">Overview</h1>
-          <div className="mt-3 h-0.5 w-10 bg-green rounded-sm" />
-        </div>
+      <header className="mb-8">
+        <h1 className="font-serif text-[30px] leading-none font-medium text-ink tracking-[-0.01em]">Overview</h1>
+        <div className="mt-3 h-0.5 w-10 bg-green rounded-sm" />
       </header>
 
       {rows.length === 0 ? (
