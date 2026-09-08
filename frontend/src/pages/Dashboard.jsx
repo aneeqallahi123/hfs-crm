@@ -18,7 +18,7 @@ const KPI_DESCRIPTIONS = {
   'Files to match': 'Files received in the inbox that haven\'t been matched to a checklist item yet.',
 };
 
-// Tooltip rendered at a fixed viewport position to escape overflow:hidden containers
+// Tooltip at fixed viewport coords — escapes any overflow:hidden ancestor
 function InfoIcon({ label }) {
   const [pos, setPos] = useState(null);
   const btnRef = useRef(null);
@@ -28,7 +28,8 @@ function InfoIcon({ label }) {
   function show() {
     if (!btnRef.current) return;
     const r = btnRef.current.getBoundingClientRect();
-    setPos({ top: r.top, left: r.left + r.width / 2 });
+    // Position tooltip centred above button
+    setPos({ top: r.top - 8, left: r.left + r.width / 2 });
   }
 
   return (
@@ -49,7 +50,11 @@ function InfoIcon({ label }) {
         <span
           role="tooltip"
           className="fixed z-[9999] pointer-events-none"
-          style={{ bottom: `calc(100vh - ${pos.top}px + 8px)`, left: pos.left, transform: 'translateX(-50%)' }}
+          style={{
+            top: `${pos.top}px`,
+            left: `${pos.left}px`,
+            transform: 'translate(-50%, calc(-100%))',
+          }}
         >
           <span className="block w-60 text-xs bg-ink text-paper rounded-xl px-3.5 py-2.5 shadow-2xl leading-relaxed">
             {desc}
@@ -154,16 +159,33 @@ function ClientsTable({ rows, navigate }) {
     return Math.max(...b.rows.map((r) => rankM(r.m))) - Math.max(...a.rows.map((r) => rankM(r.m)));
   });
 
-  function ColHeader({ col, children, className = '' }) {
+  // Right-aligned sortable header
+  function RColHeader({ col, label }) {
     const active = sortKey === col;
     return (
-      <th className={`py-3 font-medium ${className}`}>
+      <th className="py-3 px-4 text-right font-mono text-[11px] font-medium">
         <button
           onClick={() => setSortKey(col)}
-          className={`flex items-center gap-1 transition-colors ${active ? 'text-green' : 'text-slate-400 hover:text-slate-600'}`}
+          className={`inline-flex items-center gap-1 ml-auto transition-colors ${active ? 'text-green' : 'text-slate-400 hover:text-slate-600'}`}
         >
-          {children}
-          <span className={`text-[8px] transition-opacity ${active ? 'opacity-100' : 'opacity-0'}`}>▼</span>
+          {label}
+          <span className={`text-[8px] ${active ? 'opacity-100' : 'opacity-0'}`}>▼</span>
+        </button>
+      </th>
+    );
+  }
+
+  // Left-aligned sortable header
+  function LColHeader({ col, label }) {
+    const active = sortKey === col;
+    return (
+      <th className="py-3 px-4 text-left font-mono text-[11px] font-medium">
+        <button
+          onClick={() => setSortKey(col)}
+          className={`inline-flex items-center gap-1 transition-colors ${active ? 'text-green' : 'text-slate-400 hover:text-slate-600'}`}
+        >
+          {label}
+          <span className={`text-[8px] ${active ? 'opacity-100' : 'opacity-0'}`}>▼</span>
         </button>
       </th>
     );
@@ -194,25 +216,30 @@ function ClientsTable({ rows, navigate }) {
       </div>
 
       {/* Table */}
-      <div className="rounded-xl border border-tint overflow-hidden bg-paper" style={{ maxHeight: 'calc(100vh - 300px)', overflowY: 'auto' }}>
-        <table className="w-full text-sm" style={{ tableLayout: 'fixed' }}>
+      <div className="rounded-xl border border-tint bg-paper" style={{ maxHeight: 'calc(100vh - 300px)', overflowY: 'auto' }}>
+        <table className="w-full text-sm" style={{ tableLayout: 'fixed', borderCollapse: 'collapse' }}>
           <colgroup>
-            <col style={{ width: '40%' }} />
-            <col style={{ width: '15%' }} />
-            <col style={{ width: '15%' }} />
+            {/* Client name */}
+            <col style={{ width: '38%' }} />
+            {/* Awaited */}
+            <col style={{ width: '14%' }} />
+            {/* Review */}
+            <col style={{ width: '14%' }} />
+            {/* Due */}
             <col style={{ width: '18%' }} />
-            <col style={{ width: '12%' }} />
+            {/* Health */}
+            <col style={{ width: '16%' }} />
           </colgroup>
           <thead className="sticky top-0 z-10 bg-fog border-b border-tint">
-            <tr className="font-mono text-[11px]">
-              <ColHeader col="name" className="px-4 text-left">Client</ColHeader>
-              <ColHeader col="awaited" className="px-4 text-right justify-end"><span className="w-full text-right">Awaited</span></ColHeader>
-              <th className="py-3 px-4 font-medium text-right text-slate-400 text-[11px] font-mono">Review</th>
-              <ColHeader col="due" className="px-4 text-right justify-end"><span className="w-full text-right">Due</span></ColHeader>
-              <ColHeader col="health" className="px-4 text-left">Health</ColHeader>
+            <tr>
+              <LColHeader col="name" label="Client" />
+              <RColHeader col="awaited" label="Awaited" />
+              <th className="py-3 px-4 text-right font-mono text-[11px] font-medium text-slate-400">Review</th>
+              <RColHeader col="due" label="Due" />
+              <LColHeader col="health" label="Health" />
             </tr>
           </thead>
-          <tbody className="divide-y divide-tint">
+          <tbody>
             {sorted.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-4 py-10 text-sm text-slate-400 text-center">
@@ -222,84 +249,68 @@ function ClientsTable({ rows, navigate }) {
             )}
             {sorted.map(({ client, clientId, rows: cRows }) => {
               const isOpen = expanded[clientId];
-              const { totalAwaited, totalReview, nearestDue, nearestPct, worstRow } = agg(cRows);
-              const h = healthOf(worstRow.m);
-              const hasMultiple = cRows.length > 1;
               const sortedYears = cRows.slice().sort((a, b) => (b.e.year > a.e.year ? 1 : -1));
-              const singleTarget = !hasMultiple ? sortedYears[0].e.id : null;
+              const incharge = cRows[0].e.incharge;
 
               return (
                 <React.Fragment key={clientId}>
-                  {/* Client row */}
+                  {/* Client header row — name only, no data values */}
                   <tr
-                    onClick={() => hasMultiple ? toggle(clientId) : navigate(`/engagements/${singleTarget}`)}
-                    className={`cursor-pointer transition-colors duration-100 ${isOpen ? 'bg-fog/50' : 'hover:bg-fog/40'}`}
+                    onClick={() => toggle(clientId)}
+                    className={`border-b border-tint cursor-pointer select-none transition-colors duration-100 ${isOpen ? 'bg-fog/60' : 'hover:bg-fog/40'}`}
                   >
-                    {/* Client name */}
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" colSpan={5}>
                       <div className="flex items-center gap-2 min-w-0">
-                        {/* Chevron — always takes space, invisible for single-year */}
-                        <span className={`shrink-0 text-[9px] transition-transform duration-200 ${hasMultiple ? 'text-slate-400' : 'invisible'} ${isOpen ? 'rotate-90' : ''} inline-block`}>
+                        <span className={`shrink-0 text-[9px] text-slate-400 transition-transform duration-200 inline-block ${isOpen ? 'rotate-90' : ''}`}>
                           ▶
                         </span>
                         <span className="font-medium text-ink truncate">{client?.name}</span>
-                        {cRows[0].e.incharge && (
-                          <span className="text-xs text-slate-400 font-normal shrink-0">{cRows[0].e.incharge}</span>
+                        {incharge && (
+                          <span className="text-xs text-slate-400 font-normal shrink-0">{incharge}</span>
                         )}
-                        {hasMultiple && (
-                          <span className="text-[10px] text-slate-300 font-normal shrink-0">{cRows.length} yrs</span>
-                        )}
+                        <span className="text-[10px] text-slate-300 font-normal shrink-0">
+                          {cRows.length} {cRows.length === 1 ? 'yr' : 'yrs'}
+                        </span>
                       </div>
-                    </td>
-                    {/* Awaited */}
-                    <td className="px-4 py-3 text-right tabular-nums">
-                      {totalAwaited
-                        ? <span className="text-ink font-medium">{totalAwaited}</span>
-                        : <span className="text-slate-300">—</span>}
-                    </td>
-                    {/* Review */}
-                    <td className="px-4 py-3 text-right tabular-nums">
-                      {totalReview
-                        ? <span className="text-ink font-medium">{totalReview}</span>
-                        : <span className="text-slate-300">—</span>}
-                    </td>
-                    {/* Due */}
-                    <td className={`px-4 py-3 text-right tabular-nums text-xs ${dueCls(nearestDue, nearestPct)}`}>
-                      {dueLabel(nearestDue, nearestPct)}
-                    </td>
-                    {/* Health */}
-                    <td className="px-4 py-3">
-                      <span className={`text-xs px-2 py-0.5 rounded-full border ${h.cls}`}>{h.label}</span>
                     </td>
                   </tr>
 
-                  {/* Year sub-rows */}
-                  {hasMultiple && isOpen && sortedYears.map(({ e, m }, idx) => {
+                  {/* Year rows — always rendered when expanded */}
+                  {isOpen && sortedYears.map(({ e, m }, idx) => {
                     const yh = healthOf(m);
                     return (
                       <tr
                         key={e.id}
                         onClick={() => navigate(`/engagements/${e.id}`)}
-                        className="cursor-pointer bg-fog/20 hover:bg-fog/50 transition-colors duration-100"
+                        className="border-b border-tint/60 last:border-b-0 cursor-pointer bg-white hover:bg-fog/30 transition-colors duration-100"
                       >
+                        {/* Year label */}
                         <td className="px-4 py-2.5 pl-9">
                           <div className="flex items-center gap-2">
                             <span className="text-slate-300 text-xs shrink-0">└</span>
-                            <span className="text-sm text-slate-600">FY {e.year}</span>
+                            <span className="text-sm text-slate-700 font-medium">FY {e.year}</span>
                             {idx === 0 && (
                               <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-green/10 text-green border border-green/20 font-semibold tracking-wide uppercase">latest</span>
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-2.5 text-right tabular-nums text-xs">
-                          {m.outstandingCount ? <span className="text-slate-600">{m.outstandingCount}</span> : <span className="text-slate-300">—</span>}
+                        {/* Awaited */}
+                        <td className="px-4 py-2.5 text-right tabular-nums text-sm">
+                          {m.outstandingCount
+                            ? <span className="text-ink font-medium">{m.outstandingCount}</span>
+                            : <span className="text-slate-300">—</span>}
                         </td>
-                        <td className="px-4 py-2.5 text-right tabular-nums text-xs">
-                          {m.review ? <span className="text-slate-600">{m.review}</span> : <span className="text-slate-300">—</span>}
+                        {/* Review */}
+                        <td className="px-4 py-2.5 text-right tabular-nums text-sm">
+                          {m.review
+                            ? <span className="text-ink font-medium">{m.review}</span>
+                            : <span className="text-slate-300">—</span>}
                         </td>
+                        {/* Due */}
                         <td className={`px-4 py-2.5 text-right tabular-nums text-xs ${dueCls(m.daysLeft, m.pct)}`}>
                           {dueLabel(m.daysLeft, m.pct)}
                         </td>
+                        {/* Health */}
                         <td className="px-4 py-2.5">
                           <span className={`text-xs px-2 py-0.5 rounded-full border ${yh.cls}`}>{yh.label}</span>
                         </td>
