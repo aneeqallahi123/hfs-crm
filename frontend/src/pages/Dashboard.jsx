@@ -18,45 +18,31 @@ const KPI_DESCRIPTIONS = {
   'Files to match': 'Files received in the inbox that haven\'t been matched to a checklist item yet.',
 };
 
-// Tooltip at fixed viewport coords — escapes any overflow:hidden ancestor
+// Tooltip — absolute, centred above the button.
+// Works because the KPI grid has no overflow:hidden, so nothing clips it.
 function InfoIcon({ label }) {
-  const [pos, setPos] = useState(null);
-  const btnRef = useRef(null);
+  const [show, setShow] = useState(false);
   const desc = KPI_DESCRIPTIONS[label] || '';
   if (!desc) return null;
-
-  function show() {
-    if (!btnRef.current) return;
-    const r = btnRef.current.getBoundingClientRect();
-    // Position tooltip centred above button
-    setPos({ top: r.top - 8, left: r.left + r.width / 2 });
-  }
-
   return (
-    <span className="inline-flex items-center ml-1.5">
+    <span className="relative inline-flex items-center ml-1.5">
       <button
-        ref={btnRef}
-        onMouseEnter={show}
-        onMouseLeave={() => setPos(null)}
-        onFocus={show}
-        onBlur={() => setPos(null)}
+        onMouseEnter={() => setShow(true)}
+        onMouseLeave={() => setShow(false)}
+        onFocus={() => setShow(true)}
+        onBlur={() => setShow(false)}
         className="w-3.5 h-3.5 rounded-full border border-slate-300 text-slate-400 text-[9px] flex items-center justify-center hover:border-green hover:text-green transition-colors focus:outline-none shrink-0"
         tabIndex={-1}
         aria-label={`About: ${label}`}
       >
         i
       </button>
-      {pos && (
+      {show && (
         <span
           role="tooltip"
-          className="fixed z-[9999] pointer-events-none"
-          style={{
-            top: `${pos.top}px`,
-            left: `${pos.left}px`,
-            transform: 'translate(-50%, calc(-100%))',
-          }}
+          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-60 z-50 pointer-events-none"
         >
-          <span className="block w-60 text-xs bg-ink text-paper rounded-xl px-3.5 py-2.5 shadow-2xl leading-relaxed">
+          <span className="block text-xs bg-ink text-paper rounded-xl px-3.5 py-2.5 shadow-2xl leading-relaxed whitespace-normal">
             {desc}
             <span className="block absolute top-full left-1/2 -translate-x-1/2 border-[5px] border-transparent border-t-ink" />
           </span>
