@@ -999,14 +999,16 @@ export default function EngagementDetail() {
   }
 
   async function commitIncharge(name) {
+    const prevIncharge = engagement?.incharge || '';
     await commitEng({ incharge: name });
     if (name) {
-      const unassigned = items.filter(it => !it.owner);
-      if (unassigned.length > 0) {
-        setItems(prev => prev.map(it => it.owner ? it : { ...it, owner: name }));
+      // Reassign tasks that belong to the previous in-charge or have no owner
+      const toReassign = items.filter(it => !it.owner || it.owner === prevIncharge);
+      if (toReassign.length > 0) {
+        setItems(prev => prev.map(it => (!it.owner || it.owner === prevIncharge) ? { ...it, owner: name } : it));
         try {
-          await api.items.bulkUpdate(unassigned.map(it => ({ id: it.id, owner: name })));
-          toast(`Assigned ${unassigned.length} task${unassigned.length !== 1 ? 's' : ''} to ${name}`, 'success');
+          await api.items.bulkUpdate(toReassign.map(it => ({ id: it.id, owner: name })));
+          toast(`Assigned ${toReassign.length} task${toReassign.length !== 1 ? 's' : ''} to ${name}`, 'success');
         } catch (err) { toast(err.message, 'error'); load(); }
       }
     }
