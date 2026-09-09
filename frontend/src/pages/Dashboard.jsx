@@ -405,11 +405,10 @@ export default function Dashboard() {
           </div>
 
           <section>
-            <div className="flex items-baseline gap-3 mb-3">
+            <div className="flex items-baseline gap-2 mb-3">
               <h2 className="font-serif text-lg font-medium text-ink">Clients</h2>
-              <span className="font-mono text-[13px] font-medium text-paper bg-green px-2 py-0.5 rounded-full leading-none">
-                {clientCount}
-              </span>
+              <span className="text-slate-300 text-sm select-none">·</span>
+              <span className="font-mono text-sm text-slate-400">{clientCount}</span>
             </div>
             <ClientsTable rows={rows} navigate={navigate} />
           </section>
