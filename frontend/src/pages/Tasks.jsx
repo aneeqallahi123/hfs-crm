@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -23,18 +24,37 @@ const TASK_TYPES = ['Number / Financial', 'Information', 'Document'];
 
 function FilterDropdown({ label, value, options, onChange }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-  useEffect(() => {
-    function handler(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+  const [coords, setCoords] = useState({ top: 0, left: 0 });
+  const btnRef = useRef(null);
+
+  const reposition = useCallback(() => {
+    if (!btnRef.current) return;
+    const r = btnRef.current.getBoundingClientRect();
+    setCoords({ top: r.bottom + 6, left: r.left });
   }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    reposition();
+    function onScroll() { reposition(); }
+    function onKey(e) { if (e.key === 'Escape') setOpen(false); }
+    function onMouse(e) { if (btnRef.current && !btnRef.current.contains(e.target)) setOpen(false); }
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onMouse);
+    return () => {
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onMouse);
+    };
+  }, [open, reposition]);
 
   const selected = options.find((o) => o.value === value);
 
   return (
-    <div className="relative" ref={ref}>
+    <>
       <button
+        ref={btnRef}
         onClick={() => setOpen(!open)}
         className={`flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border transition-colors ${
           value !== 'all' ? 'bg-deep text-paper border-deep' : 'bg-paper text-ink border-tint hover:bg-fog'
@@ -45,8 +65,11 @@ function FilterDropdown({ label, value, options, onChange }) {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
       </button>
-      {open && (
-        <div className="absolute top-full mt-1 left-0 z-20 bg-paper border border-tint rounded-xl shadow-lg py-1 min-w-[160px]">
+      {open && createPortal(
+        <div
+          style={{ position: 'fixed', top: coords.top, left: coords.left, zIndex: 9999 }}
+          className="bg-paper border border-tint rounded-xl shadow-xl py-1 min-w-[180px]"
+        >
           {options.map((o) => (
             <button
               key={o.value}
@@ -57,9 +80,10 @@ function FilterDropdown({ label, value, options, onChange }) {
               {o.count != null && <span className="font-mono text-xs text-slate-400">{o.count}</span>}
             </button>
           ))}
-        </div>
+        </div>,
+        document.body
       )}
-    </div>
+    </>
   );
 }
 
