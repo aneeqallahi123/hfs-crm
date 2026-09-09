@@ -96,7 +96,7 @@ function dueCls(daysLeft, pct) {
   return 'text-slate-500';
 }
 
-function ClientsTable({ rows, navigate }) {
+function ClientsTable({ rows, navigate, clientCount }) {
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState({});
   const [sortKey, setSortKey] = useState('health');
@@ -180,7 +180,7 @@ function ClientsTable({ rows, navigate }) {
   return (
     <div>
       {/* Search bar */}
-      <div className="mb-3 flex items-center gap-3">
+      <div className="mb-3 flex items-center gap-2.5">
         <div className="relative">
           <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <circle cx="11" cy="11" r="7" strokeWidth="2"/><path d="m21 21-4.35-4.35" strokeWidth="2" strokeLinecap="round"/>
@@ -198,7 +198,10 @@ function ClientsTable({ rows, navigate }) {
             >✕</button>
           )}
         </div>
-        {search && <span className="text-xs text-slate-400">{sorted.length} match{sorted.length !== 1 ? 'es' : ''}</span>}
+        {/* Glass count chip */}
+        <span className="inline-flex items-center px-2.5 py-1.5 rounded-lg border border-tint/70 bg-fog/60 backdrop-blur-sm text-xs font-mono text-slate-500 select-none">
+          {search ? `${sorted.length} / ${clientCount}` : clientCount}
+        </span>
       </div>
 
       {/* Table */}
@@ -405,12 +408,8 @@ export default function Dashboard() {
           </div>
 
           <section>
-            <div className="flex items-baseline gap-2 mb-3">
-              <h2 className="font-serif text-lg font-medium text-ink">Clients</h2>
-              <span className="text-slate-300 text-sm select-none">·</span>
-              <span className="font-mono text-sm text-slate-400">{clientCount}</span>
-            </div>
-            <ClientsTable rows={rows} navigate={navigate} />
+            <h2 className="font-serif text-lg font-medium text-ink mb-3">Clients</h2>
+            <ClientsTable rows={rows} navigate={navigate} clientCount={clientCount} />
           </section>
         </>
       )}
