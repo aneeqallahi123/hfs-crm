@@ -198,7 +198,7 @@ function ClientsTable({ rows, navigate }) {
             >✕</button>
           )}
         </div>
-        <span className="text-xs text-slate-400">{sorted.length} client{sorted.length !== 1 ? 's' : ''}</span>
+        {search && <span className="text-xs text-slate-400">{sorted.length} match{sorted.length !== 1 ? 'es' : ''}</span>}
       </div>
 
       {/* Table */}
@@ -375,6 +375,7 @@ export default function Dashboard() {
   const flaggedCount = rows.reduce((s, r) => s + r.items.filter((it) => it.headIncluded && progressTier(it)).length, 0);
   const openTasksCount = rows.reduce((s, r) => s + r.items.filter((it) => it.headIncluded && it.status === 'No progress').length, 0);
   const overallPct = rows.length ? Math.round(rows.reduce((s, r) => s + r.m.pct, 0) / rows.length) : 0;
+  const clientCount = new Set(rows.map((r) => r.e.clientId)).size;
 
   return (
     <div className="stagger p-8 max-w-5xl">
@@ -404,7 +405,12 @@ export default function Dashboard() {
           </div>
 
           <section>
-            <h2 className="font-serif text-lg font-medium text-ink mb-3">Clients</h2>
+            <div className="flex items-baseline gap-3 mb-3">
+              <h2 className="font-serif text-lg font-medium text-ink">Clients</h2>
+              <span className="font-mono text-[13px] font-medium text-paper bg-green px-2 py-0.5 rounded-full leading-none">
+                {clientCount}
+              </span>
+            </div>
             <ClientsTable rows={rows} navigate={navigate} />
           </section>
         </>
