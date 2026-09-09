@@ -107,6 +107,9 @@ export default function Tasks() {
   const [q, setQ] = useState('');
   const [showDone, setShowDone] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [expandedPeople, setExpandedPeople] = useState({});
+  const [expandedFirms, setExpandedFirms] = useState({});
+  const [expandedYears, setExpandedYears] = useState({});
   const [add, setAdd] = useState({ title: '', type: '', owner: '', clientId: '', engagementId: '', due: '' });
   const [addLoading, setAddLoading] = useState(false);
 
@@ -315,42 +318,127 @@ export default function Tasks() {
           {groups.length === 0 && (
             <p className="text-sm text-slate-400 py-6 px-1">Nothing matches these filters.</p>
           )}
-          <div className="space-y-4">
-            {groups.map((g) => (
-              <section key={g.name || '__none'} className="bg-paper border border-tint rounded-xl overflow-hidden shadow-sm">
-                <div className="px-4 py-2.5 border-b border-tint bg-fog/60 flex items-center gap-3">
-                  <span className="w-7 h-7 rounded-full bg-gradient-to-br from-deep/20 to-green/20 border border-tint text-ink flex items-center justify-center text-[11px] font-semibold shrink-0">
-                    {g.name ? g.name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase() : '—'}
-                  </span>
-                  <span className="text-sm font-medium text-ink flex-1">{g.name || 'Unassigned'}</span>
-                  <span className="font-mono text-[11px] px-1.5 py-0.5 rounded-md bg-fog border border-tint text-slate-500 tabular-nums">{g.list.length}</span>
-                  {g.name && !isStudent && (
-                    <button onClick={() => navigate(`/team/${encodeURIComponent(g.name)}`)} className="text-xs text-green hover:underline underline-offset-2">
-                      Record
-                    </button>
-                  )}
-                </div>
-                <div className="divide-y divide-tint/60">
-                  {g.list.slice(0, 80).map((r) => (
-                    <div key={r.it.id} className={`pl-3 pr-4 py-2.5 flex items-center gap-3 hover:bg-fog/60 transition-colors border-l-[3px] ${edgeOf(r.tier)}`}>
-                      <div className="flex-1 min-w-0 cursor-pointer" onClick={() => navigate(`/engagements/${r.e.id}`)}>
-                        <div className="text-sm text-ink truncate">{r.it.p}</div>
-                        <div className={`text-xs truncate mt-0.5 ${r.it.due && r.it.due < td ? 'text-deep font-medium' : 'text-slate-400'}`}>
-                          {r.sub}{r.inherited ? ' · via in-charge' : ''}
-                        </div>
-                      </div>
-                      {r.tier && (
-                        <span className={`text-[10px] tabular-nums shrink-0 ${TIER_STYLE[r.tier].text}`} title="Days since last progress">
-                          {ageLabel(r.age)}
-                        </span>
-                      )}
-                      {!isStudent && <OwnerSelect value={r.it.owner} team={team} onChange={(v) => patch(r, { owner: v })} />}
-                      <StatusSelect it={r.it} onChange={(v) => patch(r, withStatus(r.it, v))} />
+          <div className="space-y-3">
+            {groups.map((g) => {
+              const personKey = g.name || '__none';
+              const isPersonOpen = !!expandedPeople[personKey];
+
+              // Build firm → year → tasks hierarchy
+              const byFirm = {};
+              for (const r of g.list) {
+                const firmName = r.client?.name || 'No firm';
+                const firmId = r.client?.id || '__nofirm';
+                const yearKey = `FY ${r.e.year}`;
+                if (!byFirm[firmId]) byFirm[firmId] = { firmName, firmId, byYear: {} };
+                if (!byFirm[firmId].byYear[yearKey]) byFirm[firmId].byYear[yearKey] = [];
+                byFirm[firmId].byYear[yearKey].push(r);
+              }
+              const firms = Object.values(byFirm);
+
+              return (
+                <section key={personKey} className="bg-paper border border-tint rounded-xl overflow-hidden shadow-sm">
+                  {/* Person header — always visible, click to expand */}
+                  <button
+                    className="w-full px-4 py-3 flex items-center gap-3 hover:bg-fog/50 transition-colors text-left"
+                    onClick={() => setExpandedPeople((p) => ({ ...p, [personKey]: !p[personKey] }))}
+                  >
+                    <span className="w-8 h-8 rounded-full bg-gradient-to-br from-deep/20 to-green/20 border border-tint text-ink flex items-center justify-center text-[11px] font-semibold shrink-0">
+                      {g.name ? g.name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase() : '—'}
+                    </span>
+                    <span className="text-sm font-medium text-ink flex-1">{g.name || 'Unassigned'}</span>
+                    <span className="font-mono text-[11px] px-1.5 py-0.5 rounded-md bg-fog border border-tint text-slate-500 tabular-nums">{g.list.length}</span>
+                    {g.name && !isStudent && (
+                      <span
+                        onClick={(e) => { e.stopPropagation(); navigate(`/team/${encodeURIComponent(g.name)}`); }}
+                        className="text-xs text-green hover:underline underline-offset-2"
+                      >Record</span>
+                    )}
+                    <svg className={`w-4 h-4 text-slate-400 transition-transform shrink-0 ${isPersonOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+
+                  {/* Expanded: firm → year → tasks */}
+                  {isPersonOpen && (
+                    <div className="border-t border-tint divide-y divide-tint/60">
+                      {firms.map(({ firmName, firmId, byYear }) => {
+                        const firmKey = `${personKey}__${firmId}`;
+                        const isFirmOpen = !!expandedFirms[firmKey];
+                        const firmTotal = Object.values(byYear).reduce((s, l) => s + l.length, 0);
+                        const years = Object.entries(byYear).sort((a, b) => b[0].localeCompare(a[0]));
+
+                        return (
+                          <div key={firmId}>
+                            {/* Firm header */}
+                            <button
+                              className="w-full px-5 py-2.5 flex items-center gap-2 hover:bg-fog/40 transition-colors text-left bg-fog/20"
+                              onClick={() => setExpandedFirms((p) => ({ ...p, [firmKey]: !p[firmKey] }))}
+                            >
+                              <svg className="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                              </svg>
+                              <span className="text-xs font-medium text-ink flex-1">{firmName}</span>
+                              <span className="font-mono text-[10px] text-slate-400 tabular-nums">{firmTotal}</span>
+                              <svg className={`w-3.5 h-3.5 text-slate-400 transition-transform shrink-0 ${isFirmOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                              </svg>
+                            </button>
+
+                            {/* Engagement years */}
+                            {isFirmOpen && years.map(([yearKey, list]) => {
+                              const yearStateKey = `${firmKey}__${yearKey}`;
+                              const isYearOpen = !!expandedYears[yearStateKey];
+
+                              return (
+                                <div key={yearKey}>
+                                  {/* Year header */}
+                                  <button
+                                    className="w-full px-8 py-2 flex items-center gap-2 hover:bg-fog/30 transition-colors text-left bg-fog/10"
+                                    onClick={() => setExpandedYears((p) => ({ ...p, [yearStateKey]: !p[yearStateKey] }))}
+                                  >
+                                    <svg className="w-3 h-3 text-slate-300 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                    </svg>
+                                    <span className="text-[11px] font-medium text-slate-500 flex-1">{yearKey}</span>
+                                    <span className="font-mono text-[10px] text-slate-400 tabular-nums">{list.length}</span>
+                                    <svg className={`w-3.5 h-3.5 text-slate-400 transition-transform shrink-0 ${isYearOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                  </button>
+
+                                  {/* Tasks */}
+                                  {isYearOpen && (
+                                    <div className="divide-y divide-tint/40">
+                                      {list.map((r) => (
+                                        <div key={r.it.id} className={`pl-10 pr-4 py-2.5 flex items-center gap-3 hover:bg-fog/60 transition-colors border-l-[3px] ${edgeOf(r.tier)}`}>
+                                          <div className="flex-1 min-w-0 cursor-pointer" onClick={() => navigate(`/engagements/${r.e.id}`)}>
+                                            <div className="text-sm text-ink truncate">{r.it.p}</div>
+                                            <div className={`text-xs truncate mt-0.5 ${r.it.due && r.it.due < td ? 'text-deep font-medium' : 'text-slate-400'}`}>
+                                              {r.it.sub}{r.it.due ? ` · due ${r.it.due}` : ''}{r.inherited ? ' · via in-charge' : ''}
+                                            </div>
+                                          </div>
+                                          {r.tier && (
+                                            <span className={`text-[10px] tabular-nums shrink-0 ${TIER_STYLE[r.tier].text}`} title="Days since last progress">
+                                              {ageLabel(r.age)}
+                                            </span>
+                                          )}
+                                          {!isStudent && <OwnerSelect value={r.it.owner} team={team} onChange={(v) => patch(r, { owner: v })} />}
+                                          <StatusSelect it={r.it} onChange={(v) => patch(r, withStatus(r.it, v))} />
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
                     </div>
-                  ))}
-                </div>
-              </section>
-            ))}
+                  )}
+                </section>
+              );
+            })}
           </div>
 
           {done.length > 0 && (
