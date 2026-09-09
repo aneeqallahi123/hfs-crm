@@ -26,6 +26,7 @@ function FilterDropdown({ label, value, options, onChange }) {
   const [open, setOpen] = useState(false);
   const [coords, setCoords] = useState({ top: 0, left: 0 });
   const btnRef = useRef(null);
+  const panelRef = useRef(null);
 
   const reposition = useCallback(() => {
     if (!btnRef.current) return;
@@ -38,7 +39,11 @@ function FilterDropdown({ label, value, options, onChange }) {
     reposition();
     function onScroll() { reposition(); }
     function onKey(e) { if (e.key === 'Escape') setOpen(false); }
-    function onMouse(e) { if (btnRef.current && !btnRef.current.contains(e.target)) setOpen(false); }
+    function onMouse(e) {
+      const inBtn = btnRef.current && btnRef.current.contains(e.target);
+      const inPanel = panelRef.current && panelRef.current.contains(e.target);
+      if (!inBtn && !inPanel) setOpen(false);
+    }
     window.addEventListener('scroll', onScroll, true);
     window.addEventListener('keydown', onKey);
     document.addEventListener('mousedown', onMouse);
@@ -67,6 +72,7 @@ function FilterDropdown({ label, value, options, onChange }) {
       </button>
       {open && createPortal(
         <div
+          ref={panelRef}
           style={{ position: 'fixed', top: coords.top, left: coords.left, zIndex: 9999 }}
           className="bg-paper border border-tint rounded-xl shadow-xl py-1 min-w-[180px]"
         >
