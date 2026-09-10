@@ -18,9 +18,8 @@ export default function PersonEdit() {
   const [editName, setEditName] = useState('');
   const [editRole, setEditRole] = useState('student');
   const [editUsername, setEditUsername] = useState('');
-  const [currentPassword, setCurrentPassword] = useState('');
+  const [changingPw, setChangingPw] = useState(false);
   const [editPassword, setEditPassword] = useState('');
-  const [showCurrentPw, setShowCurrentPw] = useState(false);
   const [showPw, setShowPw] = useState(false);
 
   useEffect(() => {
@@ -49,7 +48,7 @@ export default function PersonEdit() {
     if (editName.trim() !== person.name) updates.name = editName.trim();
     if (editRole !== person.role) updates.role = editRole;
     if (editUsername.trim() && editUsername.trim() !== person.username) updates.username = editUsername.trim().toLowerCase();
-    if (editPassword && currentPassword) { updates.password = editPassword; updates.currentPassword = currentPassword; }
+    if (editPassword) updates.password = editPassword;
     if (!Object.keys(updates).length) { navigate(`/team/${encodeURIComponent(name)}`); return; }
     setSaving(true);
     try {
@@ -141,43 +140,35 @@ export default function PersonEdit() {
         </div>
 
         <div>
-          <label className="block text-xs font-semibold text-slate-500 mb-1.5">Current password</label>
-          <div className="relative">
-            <input
-              type={showCurrentPw ? 'text' : 'password'}
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              placeholder="Enter current password"
-              className="w-full border border-tint rounded-lg px-3 py-2.5 pr-16 text-sm focus:outline-none focus:border-green transition-colors"
-            />
-            <button type="button" onClick={() => setShowCurrentPw((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-ink transition-colors">
-              {showCurrentPw ? 'Hide' : 'Show'}
-            </button>
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-xs font-semibold text-slate-500 mb-1.5">
-            New password <span className="font-normal text-slate-400">(enter current password first)</span>
-          </label>
-          <div className="relative">
-            <input
-              type={showPw ? 'text' : 'password'}
-              value={editPassword}
-              onChange={(e) => setEditPassword(e.target.value)}
-              placeholder="Enter new password"
-              disabled={!currentPassword}
-              className="w-full border border-tint rounded-lg px-3 py-2.5 pr-16 text-sm focus:outline-none focus:border-green transition-colors disabled:opacity-40"
-            />
+          {!changingPw ? (
             <button
               type="button"
-              onClick={() => setShowPw((v) => !v)}
-              disabled={!currentPassword}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-ink transition-colors disabled:opacity-40"
+              onClick={() => setChangingPw(true)}
+              className="text-xs font-medium text-green hover:text-deep transition-colors"
             >
-              {showPw ? 'Hide' : 'Show'}
+              Change password
             </button>
-          </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-semibold text-slate-500">New password</label>
+                <button type="button" onClick={() => { setChangingPw(false); setEditPassword(''); }} className="text-xs text-slate-400 hover:text-ink transition-colors">Cancel</button>
+              </div>
+              <div className="relative">
+                <input
+                  autoFocus
+                  type={showPw ? 'text' : 'password'}
+                  value={editPassword}
+                  onChange={(e) => setEditPassword(e.target.value)}
+                  placeholder="Enter new password"
+                  className="w-full border border-tint rounded-lg px-3 py-2.5 pr-16 text-sm focus:outline-none focus:border-green transition-colors"
+                />
+                <button type="button" onClick={() => setShowPw((v) => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-ink transition-colors">
+                  {showPw ? 'Hide' : 'Show'}
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
