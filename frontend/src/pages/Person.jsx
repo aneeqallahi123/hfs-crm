@@ -39,6 +39,7 @@ export default function Person() {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState('week');
+  const [expandedClients, setExpandedClients] = useState({});
   const td = today();
 
   async function load() {
@@ -175,22 +176,47 @@ export default function Person() {
           <div className="bg-paper border border-tint rounded-xl overflow-hidden">
             {engs.length === 0 ? (
               <p className="px-5 py-4 text-sm text-slate-400">Not in charge of any clients yet.</p>
-            ) : (
-              <div className="divide-y divide-tint/60">
-                {engs.map((e) => {
-                  const client = clientOf(e);
-                  const m = engMetrics({ ...e, items: itemsByEng[e.id] || [] });
-                  const h = healthOf(m);
-                  return (
-                    <div key={e.id} onClick={() => navigate(`/engagements/${e.id}`)} className="px-5 py-2.5 flex items-center gap-3 hover:bg-fog cursor-pointer">
-                      <span className="flex-1 min-w-0 text-sm text-ink truncate">{client?.name} <span className="text-slate-400">FY{e.year}</span></span>
-                      <span className="text-xs text-slate-500 tabular-nums">{m.pct}%</span>
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full border shrink-0 ${h.cls}`}>{h.label}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            ) : (() => {
+              const byClient = [];
+              for (const e of engs) {
+                const client = clientOf(e);
+                const cid = e.clientId;
+                let group = byClient.find((g) => g.cid === cid);
+                if (!group) { group = { cid, client, engs: [] }; byClient.push(group); }
+                group.engs.push(e);
+              }
+              return (
+                <div className="divide-y divide-tint/60">
+                  {byClient.map((g) => {
+                    const open = !!expandedClients[g.cid];
+                    return (
+                      <div key={g.cid}>
+                        <button onClick={() => setExpandedClients((p) => ({ ...p, [g.cid]: !p[g.cid] }))} className="w-full px-5 py-3 flex items-center gap-3 hover:bg-fog text-left transition-colors">
+                          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className={`shrink-0 text-slate-400 transition-transform ${open ? 'rotate-90' : ''}`}><path d="M3 2l4 3-4 3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                          <span className="flex-1 text-sm font-medium text-ink truncate">{g.client?.name}</span>
+                          <span className="text-xs text-slate-400">{g.engs.length} {g.engs.length === 1 ? 'year' : 'years'}</span>
+                        </button>
+                        {open && (
+                          <div className="border-t border-tint/60 divide-y divide-tint/40">
+                            {g.engs.map((e) => {
+                              const m = engMetrics({ ...e, items: itemsByEng[e.id] || [] });
+                              const h = healthOf(m);
+                              return (
+                                <div key={e.id} onClick={() => navigate(`/engagements/${e.id}`)} className="pl-10 pr-5 py-2.5 flex items-center gap-3 hover:bg-fog cursor-pointer bg-fog/30">
+                                  <span className="flex-1 text-sm text-ink">FY{e.year}</span>
+                                  <span className="text-xs text-slate-500 tabular-nums">{m.pct}%</span>
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full border shrink-0 ${h.cls}`}>{h.label}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
         </div>
 
