@@ -351,7 +351,7 @@ export default function Tasks() {
                       <span
                         onClick={(e) => { e.stopPropagation(); navigate(`/team/${encodeURIComponent(g.name)}`); }}
                         className="text-xs text-green hover:underline underline-offset-2"
-                      >Record</span>
+                      >Profile</span>
                     )}
                     <svg className={`w-4 h-4 text-slate-400 transition-transform shrink-0 ${isPersonOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
