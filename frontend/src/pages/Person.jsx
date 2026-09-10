@@ -149,12 +149,12 @@ export default function Person() {
       </header>
 
       <div className="mb-8">
-        <h2 className="font-serif text-xl font-medium text-ink mb-5">Performance &amp; Activity</h2>
+        <h2 className="font-serif text-xl font-medium text-ink mb-5">Performance, clients and activity</h2>
 
         <div className="mb-6">
           <div className="flex items-center justify-between mb-3">
             <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Performance</div>
-            <div className="text-xs text-slate-400">{totalTasks} total tasks</div>
+            <div className="text-sm font-semibold text-ink tabular-nums">{totalTasks} <span className="text-xs font-normal text-slate-400">total tasks</span></div>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
@@ -199,13 +199,9 @@ export default function Person() {
                         {open && (
                           <div className="border-t border-tint/60 divide-y divide-tint/40">
                             {g.engs.map((e) => {
-                              const m = engMetrics({ ...e, items: itemsByEng[e.id] || [] });
-                              const h = healthOf(m);
                               return (
-                                <div key={e.id} onClick={() => navigate(`/engagements/${e.id}`)} className="pl-10 pr-5 py-2.5 flex items-center gap-3 hover:bg-fog cursor-pointer bg-fog/30">
-                                  <span className="flex-1 text-sm text-ink">FY{e.year}</span>
-                                  <span className="text-xs text-slate-500 tabular-nums">{m.pct}%</span>
-                                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full border shrink-0 ${h.cls}`}>{h.label}</span>
+                                <div key={e.id} onClick={() => navigate(`/engagements/${e.id}`)} className="pl-10 pr-5 py-2.5 flex items-center hover:bg-fog cursor-pointer bg-fog/30">
+                                  <span className="text-sm text-ink">FY{e.year}</span>
                                 </div>
                               );
                             })}
