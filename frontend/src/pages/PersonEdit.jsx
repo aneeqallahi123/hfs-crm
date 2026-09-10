@@ -81,13 +81,16 @@ export default function PersonEdit() {
     <div className="stagger p-8 max-w-lg">
       {/* Confirm Remove */}
       {confirmRemove && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-          <div className="bg-paper border border-tint rounded-xl p-6 shadow-lg max-w-sm w-full mx-4">
-            <h2 className="text-base font-semibold text-ink mb-1">Remove {person.name}?</h2>
-            <p className="text-sm text-slate-500 mb-5">This will remove them from the team. Their past work will remain intact.</p>
-            <div className="flex gap-2 justify-end">
-              <button onClick={() => setConfirmRemove(false)} className="text-sm px-4 py-2 rounded-md font-medium text-ink bg-paper hover:bg-fog border border-tint transition-colors">Cancel</button>
-              <button onClick={removePerson} className="text-sm px-4 py-2 rounded-md font-medium text-paper bg-red-500 hover:bg-red-600 transition-colors">Remove</button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm" onClick={() => setConfirmRemove(false)}>
+          <div className="bg-paper border border-tint rounded-2xl p-6 shadow-xl max-w-xs w-full mx-4" onClick={(e) => e.stopPropagation()}>
+            <div className="w-10 h-10 rounded-full bg-red-50 border border-red-100 flex items-center justify-center mb-4">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 5v4M8 11h.01" stroke="#ef4444" strokeWidth="1.5" strokeLinecap="round"/><circle cx="8" cy="8" r="6.5" stroke="#ef4444" strokeWidth="1.2"/></svg>
+            </div>
+            <h2 className="text-sm font-semibold text-ink mb-1">Remove {person.name}?</h2>
+            <p className="text-xs text-slate-500 mb-5 leading-relaxed">This will remove them from the team. Their past work will remain intact.</p>
+            <div className="flex gap-2">
+              <button onClick={() => setConfirmRemove(false)} className="flex-1 text-sm px-4 py-2 rounded-lg font-medium text-ink bg-fog hover:bg-tint border border-tint transition-colors">Cancel</button>
+              <button onClick={removePerson} className="flex-1 text-sm px-4 py-2 rounded-lg font-medium text-white bg-red-500 hover:bg-red-600 transition-colors">Remove</button>
             </div>
           </div>
         </div>
