@@ -87,12 +87,24 @@ export default function Sidebar() {
   const isPartnerOrManager = user?.role === 'partner' || user?.role === 'manager';
 
   const NAV = [
-    { path: '/', label: 'Overview', hint: 'Where every client stands' },
-    { path: '/tasks', label: 'Tasks', hint: isStudent ? 'Everything open in your name' : 'Every open task, by person' },
-    ...(isPartner ? [{ path: '/team', label: 'Team', hint: "Who's carrying what" }] : []),
-    ...(!isStudent ? [{ path: '/events', label: 'Activity', hint: 'Who changed what, and when' }] : []),
-    ...(!isStudent ? [{ path: '/clients', label: 'Clients', hint: 'Add, edit or remove clients' }] : []),
-    ...(isPartnerOrManager ? [{ path: '/library', label: 'Library', hint: 'The master request list' }] : []),
+    { path: '/', label: 'Overview', hint: 'Where every client stands', icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="shrink-0"><rect x="1" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.9"/><rect x="9" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.9"/><rect x="1" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.9"/><rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.9"/></svg>
+    )},
+    { path: '/tasks', label: 'Tasks', hint: isStudent ? 'Everything open in your name' : 'Every open task, by person', icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="shrink-0"><rect x="1" y="2.5" width="14" height="2" rx="1" fill="currentColor" opacity="0.9"/><rect x="1" y="7" width="14" height="2" rx="1" fill="currentColor" opacity="0.9"/><rect x="1" y="11.5" width="9" height="2" rx="1" fill="currentColor" opacity="0.9"/></svg>
+    )},
+    ...(isPartner ? [{ path: '/team', label: 'Team', hint: "Who's carrying what", icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="shrink-0"><circle cx="6" cy="5" r="2.5" fill="currentColor" opacity="0.9"/><path d="M1 13c0-2.76 2.24-5 5-5s5 2.24 5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.9"/><circle cx="12" cy="5" r="2" fill="currentColor" opacity="0.6"/><path d="M15 13c0-2.21-1.34-4.1-3.25-4.72" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.6"/></svg>
+    )}] : []),
+    ...(!isStudent ? [{ path: '/events', label: 'Activity', hint: 'Who changed what, and when', icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="shrink-0"><path d="M8 1v4l2.5 2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.9"/><circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.5" opacity="0.9"/></svg>
+    )}] : []),
+    ...(!isStudent ? [{ path: '/clients', label: 'Clients', hint: 'Add, edit or remove clients', icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="shrink-0"><rect x="1.5" y="3" width="13" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.5" opacity="0.9"/><path d="M1.5 6h13" stroke="currentColor" strokeWidth="1.5" opacity="0.9"/><path d="M5.5 3V1.5M10.5 3V1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.9"/></svg>
+    )}] : []),
+    ...(isPartnerOrManager ? [{ path: '/library', label: 'Library', hint: 'The master request list', icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="shrink-0"><rect x="2" y="1.5" width="3" height="13" rx="1" fill="currentColor" opacity="0.9"/><rect x="6.5" y="1.5" width="3" height="13" rx="1" fill="currentColor" opacity="0.7"/><rect x="11" y="1.5" width="3" height="13" rx="1" fill="currentColor" opacity="0.5"/></svg>
+    )}] : []),
   ];
 
   const filtered = clients.filter((c) => !q || c.name.toLowerCase().includes(q.toLowerCase()));
@@ -127,7 +139,7 @@ export default function Sidebar() {
       </div>
 
       <nav className="px-3 pb-3" aria-label="Primary">
-        {NAV.map(({ path, label, hint }) => {
+        {NAV.map(({ path, label, hint, icon }) => {
           const active = isActive(path);
           return (
             <button
@@ -136,8 +148,11 @@ export default function Sidebar() {
               aria-current={active ? 'page' : undefined}
               className={`w-full text-left px-3 py-2 rounded-md transition-colors mb-0.5 border-l-2 ${active ? 'bg-paper/10 border-green' : 'border-transparent hover:bg-paper/5'}`}
             >
-              <span className={`block text-sm ${active ? 'text-paper font-medium' : 'text-paper/85'}`}>{label}</span>
-              <span className="block text-[11px] text-paper/45">{hint}</span>
+              <span className={`flex items-center gap-2.5 text-sm ${active ? 'text-paper font-medium' : 'text-paper/85'}`}>
+                {icon && <span className={active ? 'text-paper' : 'text-paper/60'}>{icon}</span>}
+                {label}
+              </span>
+              <span className="block text-[11px] text-paper/45 mt-0.5 pl-[26px]">{hint}</span>
             </button>
           );
         })}
