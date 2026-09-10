@@ -14,7 +14,6 @@ const inPeriod = (dateStr, period, td) => {
   return true;
 };
 
-const isoDay = (d) => { const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
 
 const PERIODS = [['today', 'Today'], ['week', 'This week'], ['month', 'This month'], ['all', 'All time']];
 const EV = {
@@ -81,14 +80,7 @@ export default function Person() {
   const flagged = active.filter(({ it }) => progressTier(it)).length;
   const completed = active.filter(({ it }) => it.status === 'Completed').length;
 
-  const days = [...Array(14)].map((_, i) => { const dt = new Date(); dt.setDate(dt.getDate() - (13 - i)); return isoDay(dt); });
-  const perDay = days.map((day) => ({
-    day,
-    completed: items.filter(({ it }) => it.status === 'Completed' && it.statusSince === day).length,
-    received: items.filter(({ it }) => it.dateReceived === day).length,
-  }));
-  const maxV = Math.max(1, ...perDay.map((d) => Math.max(d.completed, d.received)));
-
+  // Activity feed (period-filtered)
   const eventList = [];
   for (const { it, e } of items) {
     const c = clientOf(e);
@@ -183,27 +175,7 @@ export default function Person() {
             </div>
           </div>
 
-          <div className="bg-paper border border-tint rounded-xl p-5 mb-4">
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-sm font-medium text-ink">Daily activity — last 14 days</span>
-              <div className="flex items-center gap-3 text-xs text-slate-400">
-                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-green inline-block" /> completed</span>
-                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-tint inline-block" /> received</span>
-              </div>
-            </div>
-            <div className="flex items-end gap-1 h-24">
-              {perDay.map((d) => (
-                <div key={d.day} className="flex-1 flex items-end gap-px h-full" title={`${d.day}: ${d.completed} completed, ${d.received} received`}>
-                  <div className="flex-1 bg-green rounded-t transition-all" style={{ height: Math.max(d.completed / maxV * 100, d.completed > 0 ? 4 : 0) + '%' }} />
-                  <div className="flex-1 bg-tint rounded-t transition-all" style={{ height: Math.max(d.received / maxV * 100, d.received > 0 ? 4 : 0) + '%' }} />
-                </div>
-              ))}
-            </div>
-            <div className="flex gap-1 mt-1.5">
-              {perDay.map((d, i) => <div key={d.day} className="flex-1 text-center text-[9px] text-slate-400">{i % 3 === 0 || i === 13 ? d.day.slice(5) : ''}</div>)}
-            </div>
-          </div>
-
+          {/* Activity feed */}
           <div className="bg-paper border border-tint rounded-xl overflow-hidden">
             <div className="px-5 py-3 border-b border-tint bg-fog/60 text-sm font-medium text-ink">
               What {name.split(' ')[0]} did <span className="text-slate-400 font-normal">— {periodLabel}</span>
