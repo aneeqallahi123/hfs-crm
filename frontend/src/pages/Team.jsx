@@ -19,6 +19,7 @@ export default function Team() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('student');
+  const [confirmRemove, setConfirmRemove] = useState(null);
   const td = today();
 
   async function load() {
@@ -62,8 +63,7 @@ export default function Team() {
   }
 
   async function remove(m) {
-    if (!confirm(`Remove ${m.name}?`)) return;
-    try { await api.team.deactivate(m.id); toast(`${m.name} removed from the team`, 'info'); load(); }
+    try { await api.team.deactivate(m.id); toast(`${m.name} removed from the team`, 'info'); setConfirmRemove(null); load(); }
     catch (err) { toast(err.message, 'error'); }
   }
 
@@ -110,11 +110,23 @@ export default function Team() {
 
   return (
     <div className="stagger p-8 max-w-4xl">
+      {confirmRemove && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="bg-paper border border-tint rounded-xl p-6 shadow-lg max-w-sm w-full mx-4">
+            <h2 className="text-base font-semibold text-ink mb-1">Remove {confirmRemove.name}?</h2>
+            <p className="text-sm text-slate-500 mb-5">This will remove them from the team. Their past work will remain intact.</p>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setConfirmRemove(null)} className="text-sm px-4 py-2 rounded-md font-medium text-ink bg-paper hover:bg-fog border border-tint transition-colors">Cancel</button>
+              <button onClick={() => remove(confirmRemove)} className="text-sm px-4 py-2 rounded-md font-medium text-paper bg-red-500 hover:bg-red-600 transition-colors">Remove</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <header className="mb-6 flex items-end justify-between">
         <div>
           <h1 className="font-serif text-[32px] leading-[1.15] font-medium text-ink tracking-[-0.01em]">Team</h1>
           <div className="mt-3 h-px w-12 bg-green" />
-          <p className="text-sm text-slate-500 mt-1">Who's carrying what. Click anyone for their full record.</p>
         </div>
         {!adding && <button onClick={() => setAdding(true)} className="text-sm px-4 py-2 rounded-md font-medium text-ink bg-paper hover:bg-fog border border-tint transition-colors">Add person</button>}
       </header>
@@ -167,30 +179,24 @@ export default function Team() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium text-ink truncate">{p.name}</div>
-                    <div className="text-xs text-slate-400 flex items-center">
-                      <select value={p.role} onClick={(e) => e.stopPropagation()} onChange={(e) => setMemberRole(p.id, e.target.value)} title="Change role" className="text-xs text-slate-500 bg-transparent border border-transparent hover:border-tint focus:border-green rounded -ml-0.5 px-0.5 focus:outline-none cursor-pointer">
-                        {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>)}
-                      </select>
-                      · {L.clients} client{L.clients === 1 ? '' : 's'}
+                    <div className="text-xs text-slate-500 capitalize">{p.role}</div>
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-xl font-semibold text-ink tabular-nums">{L.total}</span>
+                      <span className="text-xs text-slate-400">tasks</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500 bg-fog px-2 py-0.5 rounded-full">
+                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><circle cx="5" cy="5" r="4" stroke="currentColor" strokeWidth="1.5"/></svg>
+                        {L.clients} {L.clients === 1 ? 'client' : 'clients'}
+                      </span>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-lg font-semibold text-ink tabular-nums">{L.pct}%</div>
-                    <div className="text-[10px] text-slate-400">{L.done}/{L.total}</div>
-                  </div>
-                </div>
-                <div className="h-1.5 bg-fog rounded-full overflow-hidden mb-4">
-                  <div className="h-full bg-green rounded-full" style={{ width: L.pct + '%' }} />
-                </div>
-                <div className="grid grid-cols-4 gap-2 text-center">
-                  <div><div className="text-sm font-semibold text-ink tabular-nums">{L.review}</div><div className="text-[10px] text-slate-400">to review</div></div>
-                  <div><div className={`text-sm font-semibold tabular-nums ${L.flagged ? 'text-deep' : 'text-slate-400'}`}>{L.flagged}</div><div className="text-[10px] text-slate-400">flagged</div></div>
-                  <div><div className="text-sm font-semibold text-ink tabular-nums">{L.openTasks}</div><div className="text-[10px] text-slate-400">ad-hoc</div></div>
-                  <div><div className={`text-sm font-semibold tabular-nums ${L.doneToday ? 'text-green' : 'text-slate-400'}`}>{L.doneToday}</div><div className="text-[10px] text-slate-400">done today</div></div>
                 </div>
                 <div className="mt-4 pt-3 border-t border-tint flex justify-between items-center">
                   <span className={`text-xs ${a.cls}`}>{a.text}</span>
-                  <button onClick={(e) => { e.stopPropagation(); remove(p); }} className="text-[11px] text-slate-300 hover:text-deep">remove</button>
+                  <button onClick={(e) => { e.stopPropagation(); setConfirmRemove(p); }} className="text-[11px] font-medium text-red-400 hover:text-red-600 hover:bg-red-50 px-2 py-1 rounded transition-colors">Remove</button>
                 </div>
               </div>
             );
@@ -198,11 +204,6 @@ export default function Team() {
         </div>
       )}
 
-      {unassignedEngs > 0 && (
-        <p className="mt-5 text-xs text-deep bg-fog border border-tint rounded-lg px-3 py-2">
-          {unassignedEngs} engagement{unassignedEngs > 1 ? 's have' : ' has'} no in-charge yet — open the client and set one so it shows up under someone.
-        </p>
-      )}
     </div>
   );
 }
