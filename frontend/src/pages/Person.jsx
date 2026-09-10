@@ -4,8 +4,6 @@ import { api } from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import { today, daysBetween, progressTier, engMetrics, healthOf } from '../lib/metrics.js';
 
-const ROLE_OPTIONS = ['partner', 'manager', 'student'];
-
 const inPeriod = (dateStr, period, td) => {
   if (!dateStr) return false;
   const d = daysBetween(dateStr, td);
@@ -31,21 +29,6 @@ const LOG_TYPE = {
   'item.queried': () => 'queried', 'item.file': () => 'received', 'item.added': () => 'added',
 };
 
-function ConfirmModal({ title, message, onConfirm, onCancel }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-      <div className="bg-paper border border-tint rounded-xl p-6 shadow-lg max-w-sm w-full mx-4">
-        <h2 className="text-base font-semibold text-ink mb-1">{title}</h2>
-        <p className="text-sm text-slate-500 mb-5">{message}</p>
-        <div className="flex gap-2 justify-end">
-          <button onClick={onCancel} className="text-sm px-4 py-2 rounded-md font-medium text-ink bg-paper hover:bg-fog border border-tint transition-colors">Cancel</button>
-          <button onClick={onConfirm} className="text-sm px-4 py-2 rounded-md font-medium text-paper bg-red-500 hover:bg-red-600 transition-colors">Remove</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function Person() {
   const { name } = useParams();
   const navigate = useNavigate();
@@ -57,16 +40,6 @@ export default function Person() {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState('week');
-
-  // Edit profile modal
-  const [editOpen, setEditOpen] = useState(false);
-  const [editName, setEditName] = useState('');
-  const [editRole, setEditRole] = useState('');
-  const [editUsername, setEditUsername] = useState('');
-  const [editPassword, setEditPassword] = useState('');
-  const [showPw, setShowPw] = useState(false);
-  const [confirmRemove, setConfirmRemove] = useState(false);
-
   const td = today();
 
   async function load() {
@@ -94,46 +67,6 @@ export default function Person() {
 
   useEffect(() => { load(); }, [name]);
 
-  function openEdit() {
-    if (!person) return;
-    setEditName(person.name);
-    setEditRole(person.role || 'student');
-    setEditUsername(person.username || '');
-    setEditPassword('');
-    setShowPw(false);
-    setEditOpen(true);
-  }
-
-  async function saveProfile() {
-    if (!person || !editName.trim()) return;
-    const updates = {};
-    if (editName.trim() !== person.name) updates.name = editName.trim();
-    if (editRole !== person.role) updates.role = editRole;
-    if (editUsername.trim() && editUsername.trim() !== person.username) updates.username = editUsername.trim().toLowerCase();
-    if (editPassword) updates.password = editPassword;
-    if (!Object.keys(updates).length) { setEditOpen(false); return; }
-    try {
-      await api.team.update(person.id, updates);
-      toast('Profile updated', 'success');
-      setEditOpen(false);
-      if (updates.name) navigate(`/team/${encodeURIComponent(updates.name)}`);
-      else load();
-    } catch (err) {
-      toast(err.message, 'error');
-    }
-  }
-
-  async function removePerson() {
-    if (!person) return;
-    try {
-      await api.team.deactivate(person.id);
-      toast(`${person.name} removed from the team`, 'info');
-      navigate('/team');
-    } catch (err) {
-      toast(err.message, 'error');
-    }
-  }
-
   if (loading) return <div className="stagger p-8 max-w-4xl"><div className="text-sm text-slate-400">Loading…</div></div>;
 
   const engs = engagements.filter((e) => e.incharge === name);
@@ -143,13 +76,11 @@ export default function Person() {
   const clientCount = new Set(engs.map((e) => e.clientId)).size;
   const active = items.filter(({ it }) => it.status !== 'NA');
 
-  // Performance metrics (current snapshot)
   const openTasks = active.filter(({ it }) => it.status === 'No progress').length;
   const awaited = active.filter(({ it }) => it.status === 'Requested' && !it.queried).length;
   const flagged = active.filter(({ it }) => progressTier(it)).length;
   const completed = active.filter(({ it }) => it.status === 'Completed').length;
 
-  // Activity chart — last 14 days
   const days = [...Array(14)].map((_, i) => { const dt = new Date(); dt.setDate(dt.getDate() - (13 - i)); return isoDay(dt); });
   const perDay = days.map((day) => ({
     day,
@@ -158,7 +89,6 @@ export default function Person() {
   }));
   const maxV = Math.max(1, ...perDay.map((d) => Math.max(d.completed, d.received)));
 
-  // Activity feed (period-filtered)
   const eventList = [];
   for (const { it, e } of items) {
     const c = clientOf(e);
@@ -195,63 +125,8 @@ export default function Person() {
 
   return (
     <div className="stagger p-8 max-w-4xl">
-      {/* Edit Profile Modal */}
-      {editOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-          <div className="bg-paper border border-tint rounded-xl p-6 shadow-xl w-full max-w-md mx-4">
-            <h2 className="font-serif text-lg font-medium text-ink mb-5">Edit Profile</h2>
-            <div className="flex flex-col gap-4">
-              <label className="text-xs font-medium text-slate-500">
-                Name
-                <input value={editName} onChange={(e) => setEditName(e.target.value)} className="w-full mt-1 border border-tint rounded-md px-3 py-2 text-sm focus:outline-none focus:border-green" />
-              </label>
-              <label className="text-xs font-medium text-slate-500">
-                Role
-                <select value={editRole} onChange={(e) => setEditRole(e.target.value)} className="w-full mt-1 border border-tint rounded-md px-3 py-2 text-sm bg-paper focus:outline-none focus:border-green">
-                  {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>)}
-                </select>
-              </label>
-              <label className="text-xs font-medium text-slate-500">
-                Username
-                <input value={editUsername} onChange={(e) => setEditUsername(e.target.value)} className="w-full mt-1 border border-tint rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-green" />
-              </label>
-              <label className="text-xs font-medium text-slate-500">
-                New password <span className="font-normal text-slate-400">(leave blank to keep current)</span>
-                <div className="relative mt-1">
-                  <input type={showPw ? 'text' : 'password'} value={editPassword} onChange={(e) => setEditPassword(e.target.value)} placeholder="Enter new password" className="w-full border border-tint rounded-md px-3 py-2 pr-16 text-sm focus:outline-none focus:border-green" />
-                  <button type="button" onClick={() => setShowPw((v) => !v)} className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-slate-400 hover:text-ink px-1 py-0.5 rounded transition-colors">
-                    {showPw ? 'Hide' : 'Show'}
-                  </button>
-                </div>
-              </label>
-            </div>
-
-            <div className="mt-6 flex items-center justify-between">
-              <button onClick={() => { setEditOpen(false); setConfirmRemove(true); }} className="text-sm font-medium text-red-500 hover:text-red-600 transition-colors">
-                Remove person
-              </button>
-              <div className="flex gap-2">
-                <button onClick={() => setEditOpen(false)} className="text-sm px-4 py-2 rounded-md font-medium text-ink bg-paper hover:bg-fog border border-tint transition-colors">Cancel</button>
-                <button onClick={saveProfile} disabled={!editName.trim()} className="text-sm px-4 py-2 rounded-md font-medium bg-green text-paper hover:bg-deep disabled:opacity-40 transition-colors">Save</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Confirm Remove Modal */}
-      {confirmRemove && (
-        <ConfirmModal
-          title={`Remove ${person?.name}?`}
-          message="This will remove them from the team. Their past work will remain intact."
-          onConfirm={removePerson}
-          onCancel={() => { setConfirmRemove(false); setEditOpen(true); }}
-        />
-      )}
-
       <button onClick={() => navigate('/team')} className="text-xs text-slate-400 hover:text-ink mb-4">← Back to team</button>
 
-      {/* Header */}
       <header className="flex items-start gap-4 mb-8">
         <div className="w-14 h-14 rounded-full border border-tint text-ink flex items-center justify-center text-lg font-medium shrink-0">
           {initials}
@@ -273,19 +148,17 @@ export default function Person() {
             </button>
           </div>
         </div>
-        <button onClick={openEdit} className="shrink-0 text-sm px-4 py-2 rounded-md font-medium text-ink bg-paper hover:bg-fog border border-tint transition-colors">
+        <button onClick={() => navigate(`/team/${encodeURIComponent(name)}/edit`)} className="shrink-0 text-sm px-4 py-2 rounded-md font-medium text-ink bg-paper hover:bg-fog border border-tint transition-colors">
           Edit Profile
         </button>
       </header>
 
-      {/* Performance & Activity — combined section */}
       <div className="mb-8">
         <h2 className="font-serif text-xl font-medium text-ink mb-5">Performance &amp; Activity</h2>
 
-        {/* Performance subsection */}
-        <div className="mb-1">
+        <div className="mb-6">
           <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">Performance</div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
               { label: 'Open tasks', value: openTasks, cls: openTasks ? 'text-ink' : 'text-slate-300' },
               { label: 'Awaited from client', value: awaited, cls: awaited ? 'text-amber-500' : 'text-slate-300' },
@@ -300,7 +173,6 @@ export default function Person() {
           </div>
         </div>
 
-        {/* Activity subsection */}
         <div>
           <div className="flex items-center justify-between mb-3">
             <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Activity</div>
@@ -311,7 +183,6 @@ export default function Person() {
             </div>
           </div>
 
-          {/* Daily chart */}
           <div className="bg-paper border border-tint rounded-xl p-5 mb-4">
             <div className="flex items-center justify-between mb-4">
               <span className="text-sm font-medium text-ink">Daily activity — last 14 days</span>
@@ -322,7 +193,7 @@ export default function Person() {
             </div>
             <div className="flex items-end gap-1 h-24">
               {perDay.map((d) => (
-                <div key={d.day} className="flex-1 flex items-end gap-px h-full group" title={`${d.day}: ${d.completed} completed, ${d.received} received`}>
+                <div key={d.day} className="flex-1 flex items-end gap-px h-full" title={`${d.day}: ${d.completed} completed, ${d.received} received`}>
                   <div className="flex-1 bg-green rounded-t transition-all" style={{ height: Math.max(d.completed / maxV * 100, d.completed > 0 ? 4 : 0) + '%' }} />
                   <div className="flex-1 bg-tint rounded-t transition-all" style={{ height: Math.max(d.received / maxV * 100, d.received > 0 ? 4 : 0) + '%' }} />
                 </div>
@@ -333,7 +204,6 @@ export default function Person() {
             </div>
           </div>
 
-          {/* Activity feed */}
           <div className="bg-paper border border-tint rounded-xl overflow-hidden">
             <div className="px-5 py-3 border-b border-tint bg-fog/60 text-sm font-medium text-ink">
               What {name.split(' ')[0]} did <span className="text-slate-400 font-normal">— {periodLabel}</span>
@@ -362,7 +232,6 @@ export default function Person() {
         </div>
       </div>
 
-      {/* Clients list */}
       <div className="bg-paper border border-tint rounded-xl overflow-hidden">
         <div className="px-5 py-3 border-b border-tint bg-fog/60 text-sm font-medium text-ink">Clients</div>
         {engs.length === 0 ? (
