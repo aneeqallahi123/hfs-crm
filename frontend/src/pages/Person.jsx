@@ -39,6 +39,7 @@ export default function Person() {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState('week');
+  const [showClients, setShowClients] = useState(false);
   const td = today();
 
   async function load() {
@@ -115,8 +116,39 @@ export default function Person() {
   const relDay = (d) => { const n = daysBetween(d, td); return n === 0 ? 'Today' : n === 1 ? 'Yesterday' : d; };
   const initials = name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 
+  const totalTasks = active.length;
+
   return (
     <div className="stagger p-8 max-w-4xl">
+      {showClients && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setShowClients(false)}>
+          <div className="bg-paper border border-tint rounded-xl shadow-lg w-full max-w-sm mx-4" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-3 border-b border-tint flex items-center justify-between">
+              <span className="text-sm font-medium text-ink">{name.split(' ')[0]}'s clients</span>
+              <button onClick={() => setShowClients(false)} className="text-slate-400 hover:text-ink text-lg leading-none">×</button>
+            </div>
+            {engs.length === 0 ? (
+              <p className="px-5 py-4 text-sm text-slate-400">Not in charge of any clients yet.</p>
+            ) : (
+              <div className="divide-y divide-tint/60 max-h-80 overflow-y-auto">
+                {engs.map((e) => {
+                  const client = clientOf(e);
+                  const m = engMetrics({ ...e, items: itemsByEng[e.id] || [] });
+                  const h = healthOf(m);
+                  return (
+                    <div key={e.id} onClick={() => { setShowClients(false); navigate(`/engagements/${e.id}`); }} className="px-5 py-2.5 flex items-center gap-3 hover:bg-fog cursor-pointer">
+                      <span className="flex-1 min-w-0 text-sm text-ink truncate">{client?.name} <span className="text-slate-400">FY{e.year}</span></span>
+                      <span className="text-xs text-slate-500 tabular-nums">{m.pct}%</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full border shrink-0 ${h.cls}`}>{h.label}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <button onClick={() => navigate('/team')} className="text-xs text-slate-400 hover:text-ink mb-4">← Back to team</button>
 
       <header className="flex items-start gap-4 mb-8">
@@ -130,10 +162,10 @@ export default function Person() {
             <span className="text-xs font-medium text-slate-500 capitalize bg-fog border border-tint px-2.5 py-1 rounded-full">
               {person?.role || '—'}
             </span>
-            <span className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 bg-fog border border-tint px-2.5 py-1 rounded-full">
+            <button onClick={() => setShowClients(true)} className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-ink bg-fog hover:bg-paper border border-tint px-2.5 py-1 rounded-full transition-colors">
               <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><circle cx="5.5" cy="5.5" r="4.5" stroke="currentColor" strokeWidth="1.5"/></svg>
               {clientCount} {clientCount === 1 ? 'client' : 'clients'}
-            </span>
+            </button>
             <button onClick={() => navigate('/tasks')} className="inline-flex items-center gap-1 text-xs font-medium text-green hover:text-deep border border-green/30 hover:border-green px-2.5 py-1 rounded-full transition-colors bg-green/5 hover:bg-green/10">
               <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5h6M5 2l3 3-3 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
               Open tasks
@@ -149,7 +181,10 @@ export default function Person() {
         <h2 className="font-serif text-xl font-medium text-ink mb-5">Performance &amp; Activity</h2>
 
         <div className="mb-6">
-          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">Performance</div>
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Performance</div>
+            <div className="text-xs text-slate-400">{totalTasks} total tasks</div>
+          </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
               { label: 'Open tasks', value: openTasks, cls: openTasks ? 'text-ink' : 'text-slate-300' },
@@ -204,27 +239,6 @@ export default function Person() {
         </div>
       </div>
 
-      <div className="bg-paper border border-tint rounded-xl overflow-hidden">
-        <div className="px-5 py-3 border-b border-tint bg-fog/60 text-sm font-medium text-ink">Clients</div>
-        {engs.length === 0 ? (
-          <p className="px-5 py-4 text-sm text-slate-400">Not in charge of any clients yet.</p>
-        ) : (
-          <div className="divide-y divide-tint/60">
-            {engs.map((e) => {
-              const client = clientOf(e);
-              const m = engMetrics({ ...e, items: itemsByEng[e.id] || [] });
-              const h = healthOf(m);
-              return (
-                <div key={e.id} onClick={() => navigate(`/engagements/${e.id}`)} className="px-5 py-2.5 flex items-center gap-3 hover:bg-fog cursor-pointer">
-                  <span className="flex-1 min-w-0 text-sm text-ink truncate">{client?.name} <span className="text-slate-400">FY{e.year}</span></span>
-                  <span className="text-xs text-slate-500 tabular-nums">{m.pct}%</span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full border shrink-0 ${h.cls}`}>{h.label}</span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
     </div>
   );
 }
