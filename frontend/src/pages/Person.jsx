@@ -2,17 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
-import EditableText from '../components/EditableText.jsx';
-import { today, daysBetween, progressTier, noProgressDays, engMetrics, healthOf } from '../lib/metrics.js';
+import { today, daysBetween, progressTier, engMetrics, healthOf } from '../lib/metrics.js';
 
-function Stat({ label, value }) {
-  return (
-    <div className="px-4 py-4 text-center">
-      <div className="text-2xl font-semibold text-ink tabular-nums">{value}</div>
-      <div className="text-xs text-slate-500 mt-1">{label}</div>
-    </div>
-  );
-}
+const ROLE_OPTIONS = ['partner', 'manager', 'student'];
 
 const inPeriod = (dateStr, period, td) => {
   if (!dateStr) return false;
@@ -39,6 +31,21 @@ const LOG_TYPE = {
   'item.queried': () => 'queried', 'item.file': () => 'received', 'item.added': () => 'added',
 };
 
+function ConfirmModal({ title, message, onConfirm, onCancel }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+      <div className="bg-paper border border-tint rounded-xl p-6 shadow-lg max-w-sm w-full mx-4">
+        <h2 className="text-base font-semibold text-ink mb-1">{title}</h2>
+        <p className="text-sm text-slate-500 mb-5">{message}</p>
+        <div className="flex gap-2 justify-end">
+          <button onClick={onCancel} className="text-sm px-4 py-2 rounded-md font-medium text-ink bg-paper hover:bg-fog border border-tint transition-colors">Cancel</button>
+          <button onClick={onConfirm} className="text-sm px-4 py-2 rounded-md font-medium text-paper bg-red-500 hover:bg-red-600 transition-colors">Remove</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Person() {
   const { name } = useParams();
   const navigate = useNavigate();
@@ -50,10 +57,16 @@ export default function Person() {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState('week');
-  const [editingCreds, setEditingCreds] = useState(false);
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [newUsername, setNewUsername] = useState('');
+
+  // Edit profile modal
+  const [editOpen, setEditOpen] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editRole, setEditRole] = useState('');
+  const [editUsername, setEditUsername] = useState('');
+  const [editPassword, setEditPassword] = useState('');
+  const [showPw, setShowPw] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+
   const td = today();
 
   async function load() {
@@ -62,7 +75,8 @@ export default function Person() {
       const [team, c, e, evs] = await Promise.all([
         api.team.list(), api.clients.list(), api.engagements.list(), api.events.list({ limit: 500 }).catch(() => ({ events: [] })),
       ]);
-      setPerson((Array.isArray(team) ? team : []).find((p) => p.name === name) || null);
+      const p = (Array.isArray(team) ? team : []).find((p) => p.name === name) || null;
+      setPerson(p);
       setClients(Array.isArray(c) ? c : []);
       const eg = Array.isArray(e) ? e : [];
       setEngagements(eg);
@@ -80,29 +94,41 @@ export default function Person() {
 
   useEffect(() => { load(); }, [name]);
 
-  async function rename(v) {
-    const nm = v.trim();
-    if (!person || !nm || nm === name) return;
+  function openEdit() {
+    if (!person) return;
+    setEditName(person.name);
+    setEditRole(person.role || 'student');
+    setEditUsername(person.username || '');
+    setEditPassword('');
+    setShowPw(false);
+    setEditOpen(true);
+  }
+
+  async function saveProfile() {
+    if (!person || !editName.trim()) return;
+    const updates = {};
+    if (editName.trim() !== person.name) updates.name = editName.trim();
+    if (editRole !== person.role) updates.role = editRole;
+    if (editUsername.trim() && editUsername.trim() !== person.username) updates.username = editUsername.trim().toLowerCase();
+    if (editPassword) updates.password = editPassword;
+    if (!Object.keys(updates).length) { setEditOpen(false); return; }
     try {
-      await api.team.update(person.id, { name: nm });
-      navigate(`/team/${encodeURIComponent(nm)}`);
+      await api.team.update(person.id, updates);
+      toast('Profile updated', 'success');
+      setEditOpen(false);
+      if (updates.name) navigate(`/team/${encodeURIComponent(updates.name)}`);
+      else load();
     } catch (err) {
       toast(err.message, 'error');
     }
   }
 
-  async function saveCreds() {
+  async function removePerson() {
     if (!person) return;
-    if (newPassword && newPassword !== confirmPassword) { toast('Passwords do not match', 'error'); return; }
-    const updates = {};
-    if (newUsername.trim() && newUsername.trim() !== person.username) updates.username = newUsername.trim().toLowerCase();
-    if (newPassword) updates.password = newPassword;
-    if (!Object.keys(updates).length) { setEditingCreds(false); return; }
     try {
-      await api.team.update(person.id, updates);
-      toast('Login credentials updated', 'success');
-      setEditingCreds(false); setNewPassword(''); setConfirmPassword(''); setNewUsername('');
-      load();
+      await api.team.deactivate(person.id);
+      toast(`${person.name} removed from the team`, 'info');
+      navigate('/team');
     } catch (err) {
       toast(err.message, 'error');
     }
@@ -116,25 +142,14 @@ export default function Person() {
   for (const e of engagements) for (const it of (itemsByEng[e.id] || [])) if (it.headIncluded && (it.owner || e.incharge) === name) items.push({ it, e });
   const clientCount = new Set(engs.map((e) => e.clientId)).size;
   const active = items.filter(({ it }) => it.status !== 'NA');
-  const doneAll = active.filter(({ it }) => it.status === 'Completed').length;
-  const open = active.length - doneAll;
-  const pct = active.length ? Math.round((doneAll / active.length) * 100) : 0;
+
+  // Performance metrics (current snapshot)
+  const openTasks = active.filter(({ it }) => it.status === 'No progress').length;
+  const awaited = active.filter(({ it }) => it.status === 'Requested' && !it.queried).length;
   const flagged = active.filter(({ it }) => progressTier(it)).length;
-  const oldest = active.reduce((m, { it }) => { const d = noProgressDays(it); return d != null && d > m ? d : m; }, 0);
+  const completed = active.filter(({ it }) => it.status === 'Completed').length;
 
-  const perf = {
-    completed: items.filter(({ it }) => it.status === 'Completed' && inPeriod(it.statusSince, period, td)).length,
-    received: items.filter(({ it }) => inPeriod(it.dateReceived, period, td)).length,
-    queried: items.filter(({ it }) => it.dateQueried && inPeriod(it.dateQueried, period, td)).length,
-  };
-  const turns = items.filter(({ it }) => it.status === 'Completed' && it.dateReceived && it.statusSince).map(({ it }) => daysBetween(it.dateReceived, it.statusSince)).filter((d) => d != null && d >= 0);
-  const avgTurn = turns.length ? Math.round(turns.reduce((a, b) => a + b, 0) / turns.length) : null;
-
-  const activeDaySet = new Set();
-  for (const ev of events) if (ev.by === name && daysBetween(ev.day, td) <= 29 && daysBetween(ev.day, td) >= 0) activeDaySet.add(ev.day);
-  for (const { it } of items) [it.dateRequested, it.dateReceived, it.dateQueried, it.status === 'Completed' ? it.statusSince : null].forEach((d) => { if (d && daysBetween(d, td) <= 29 && daysBetween(d, td) >= 0) activeDaySet.add(d); });
-  const activeDays = activeDaySet.size;
-
+  // Activity chart — last 14 days
   const days = [...Array(14)].map((_, i) => { const dt = new Date(); dt.setDate(dt.getDate() - (13 - i)); return isoDay(dt); });
   const perDay = days.map((day) => ({
     day,
@@ -143,6 +158,7 @@ export default function Person() {
   }));
   const maxV = Math.max(1, ...perDay.map((d) => Math.max(d.completed, d.received)));
 
+  // Activity feed (period-filtered)
   const eventList = [];
   for (const { it, e } of items) {
     const c = clientOf(e);
@@ -175,128 +191,157 @@ export default function Person() {
   }
   const periodLabel = { today: 'today', week: 'in the last 7 days', month: 'in the last 30 days', all: 'all time' }[period];
   const relDay = (d) => { const n = daysBetween(d, td); return n === 0 ? 'Today' : n === 1 ? 'Yesterday' : d; };
+  const initials = name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
 
   return (
     <div className="stagger p-8 max-w-4xl">
-      <button onClick={() => navigate('/team')} className="text-xs text-slate-400 hover:text-ink mb-3">← Back to team</button>
-      <header className="flex items-center gap-4 mb-6">
+      {/* Edit Profile Modal */}
+      {editOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="bg-paper border border-tint rounded-xl p-6 shadow-xl w-full max-w-md mx-4">
+            <h2 className="font-serif text-lg font-medium text-ink mb-5">Edit Profile</h2>
+            <div className="flex flex-col gap-4">
+              <label className="text-xs font-medium text-slate-500">
+                Name
+                <input value={editName} onChange={(e) => setEditName(e.target.value)} className="w-full mt-1 border border-tint rounded-md px-3 py-2 text-sm focus:outline-none focus:border-green" />
+              </label>
+              <label className="text-xs font-medium text-slate-500">
+                Role
+                <select value={editRole} onChange={(e) => setEditRole(e.target.value)} className="w-full mt-1 border border-tint rounded-md px-3 py-2 text-sm bg-paper focus:outline-none focus:border-green">
+                  {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>)}
+                </select>
+              </label>
+              <label className="text-xs font-medium text-slate-500">
+                Username
+                <input value={editUsername} onChange={(e) => setEditUsername(e.target.value)} className="w-full mt-1 border border-tint rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-green" />
+              </label>
+              <label className="text-xs font-medium text-slate-500">
+                New password <span className="font-normal text-slate-400">(leave blank to keep current)</span>
+                <div className="relative mt-1">
+                  <input type={showPw ? 'text' : 'password'} value={editPassword} onChange={(e) => setEditPassword(e.target.value)} placeholder="Enter new password" className="w-full border border-tint rounded-md px-3 py-2 pr-16 text-sm focus:outline-none focus:border-green" />
+                  <button type="button" onClick={() => setShowPw((v) => !v)} className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] text-slate-400 hover:text-ink px-1 py-0.5 rounded transition-colors">
+                    {showPw ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+              </label>
+            </div>
+
+            <div className="mt-6 flex items-center justify-between">
+              <button onClick={() => { setEditOpen(false); setConfirmRemove(true); }} className="text-sm font-medium text-red-500 hover:text-red-600 transition-colors">
+                Remove person
+              </button>
+              <div className="flex gap-2">
+                <button onClick={() => setEditOpen(false)} className="text-sm px-4 py-2 rounded-md font-medium text-ink bg-paper hover:bg-fog border border-tint transition-colors">Cancel</button>
+                <button onClick={saveProfile} disabled={!editName.trim()} className="text-sm px-4 py-2 rounded-md font-medium bg-green text-paper hover:bg-deep disabled:opacity-40 transition-colors">Save</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Remove Modal */}
+      {confirmRemove && (
+        <ConfirmModal
+          title={`Remove ${person?.name}?`}
+          message="This will remove them from the team. Their past work will remain intact."
+          onConfirm={removePerson}
+          onCancel={() => { setConfirmRemove(false); setEditOpen(true); }}
+        />
+      )}
+
+      <button onClick={() => navigate('/team')} className="text-xs text-slate-400 hover:text-ink mb-4">← Back to team</button>
+
+      {/* Header */}
+      <header className="flex items-start gap-4 mb-8">
         <div className="w-14 h-14 rounded-full border border-tint text-ink flex items-center justify-center text-lg font-medium shrink-0">
-          {name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase()}
+          {initials}
         </div>
         <div className="flex-1 min-w-0">
-          <EditableText value={name} onSave={rename} className="font-serif text-[32px] leading-[1.15] font-medium text-ink tracking-[-0.01em] w-full -ml-1.5" />
-          <div className="mt-3 h-px w-12 bg-green" />
-          <p className="text-sm text-slate-500 mt-1">
-            {person?.role || '—'} · in-charge of {clientCount} client{clientCount === 1 ? '' : 's'} ·{' '}
-            <button onClick={() => navigate('/tasks')} className="text-green hover:underline underline-offset-2">open tasks</button>
-          </p>
+          <h1 className="font-serif text-[32px] leading-[1.15] font-medium text-ink tracking-[-0.01em]">{name}</h1>
+          <div className="mt-2 h-px w-12 bg-green" />
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            <span className="text-xs font-medium text-slate-500 capitalize bg-fog border border-tint px-2.5 py-1 rounded-full">
+              {person?.role || '—'}
+            </span>
+            <span className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 bg-fog border border-tint px-2.5 py-1 rounded-full">
+              <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><circle cx="5.5" cy="5.5" r="4.5" stroke="currentColor" strokeWidth="1.5"/></svg>
+              {clientCount} {clientCount === 1 ? 'client' : 'clients'}
+            </span>
+            <button onClick={() => navigate('/tasks')} className="inline-flex items-center gap-1 text-xs font-medium text-green hover:text-deep border border-green/30 hover:border-green px-2.5 py-1 rounded-full transition-colors bg-green/5 hover:bg-green/10">
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5h6M5 2l3 3-3 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              Open tasks
+            </button>
+          </div>
         </div>
-        <div className="text-right">
-          <div className="text-3xl font-semibold text-ink tabular-nums">{pct}%</div>
-          <div className="text-xs text-slate-400">{doneAll}/{active.length} complete</div>
-        </div>
+        <button onClick={openEdit} className="shrink-0 text-sm px-4 py-2 rounded-md font-medium text-ink bg-paper hover:bg-fog border border-tint transition-colors">
+          Edit Profile
+        </button>
       </header>
 
-      <div className="grid grid-cols-4 bg-fog rounded-lg divide-x divide-tint overflow-hidden mb-8">
-        <Stat label="Open" value={open} />
-        <Stat label="Flagged" value={flagged} />
-        <Stat label="Oldest, days" value={oldest} />
-        <Stat label="Active days / 30" value={activeDays} />
-      </div>
+      {/* Performance & Activity — combined section */}
+      <div className="mb-8">
+        <h2 className="font-serif text-xl font-medium text-ink mb-5">Performance &amp; Activity</h2>
 
-      <div className="bg-paper border border-tint rounded-xl p-5 mb-6">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-serif text-lg font-medium text-ink">Login credentials</h2>
-          {!editingCreds && (
-            <button onClick={() => { setEditingCreds(true); setNewUsername(person?.username || ''); }} className="text-xs px-3 py-1.5 rounded-md border border-tint bg-fog hover:bg-paper text-slate-600 transition-colors">Edit</button>
-          )}
-        </div>
-        {!editingCreds ? (
-          <div className="flex items-center gap-6">
-            <div>
-              <div className="text-xs text-slate-400 mb-0.5">Username</div>
-              <div className="text-sm font-mono text-ink">{person?.username || <span className="text-slate-400 italic">not set</span>}</div>
-            </div>
-            <div>
-              <div className="text-xs text-slate-400 mb-0.5">Password</div>
-              <div className="text-sm text-slate-400">••••••••</div>
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            <div className="flex gap-3">
-              <label className="flex-1 text-xs font-medium text-slate-500">
-                Username
-                <input value={newUsername} onChange={(e) => setNewUsername(e.target.value)} className="w-full mt-1 border border-tint rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-green" />
-              </label>
-            </div>
-            <div className="flex gap-3">
-              <label className="flex-1 text-xs font-medium text-slate-500">
-                New password <span className="font-normal text-slate-400">(leave blank to keep current)</span>
-                <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Enter new password" className="w-full mt-1 border border-tint rounded-md px-3 py-2 text-sm focus:outline-none focus:border-green" />
-              </label>
-              <label className="flex-1 text-xs font-medium text-slate-500">
-                Confirm password
-                <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Repeat new password" className="w-full mt-1 border border-tint rounded-md px-3 py-2 text-sm focus:outline-none focus:border-green" />
-              </label>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={saveCreds} className="text-sm px-4 py-2 rounded-md font-medium bg-green text-paper hover:bg-deep transition-colors">Save</button>
-              <button onClick={() => { setEditingCreds(false); setNewPassword(''); setConfirmPassword(''); setNewUsername(''); }} className="text-sm px-4 py-2 rounded-md font-medium text-ink bg-paper hover:bg-fog border border-tint transition-colors">Cancel</button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="font-serif text-xl font-medium text-ink">Performance and activity</h2>
-        <div className="flex gap-1">
-          {PERIODS.map(([k, l]) => (
-            <button key={k} onClick={() => setPeriod(k)} className={`text-xs px-2.5 py-1 rounded-md transition-colors ${period === k ? 'bg-deep text-paper' : 'text-slate-500 hover:bg-fog'}`}>{l}</button>
-          ))}
-        </div>
-      </div>
-
-      <div className="bg-paper border border-tint rounded-xl p-5 mb-6">
-        <div className="grid grid-cols-4 gap-4">
-          <div><div className="text-2xl font-semibold text-green tabular-nums">{perf.completed}</div><div className="text-xs text-slate-500 mt-0.5">Completed</div></div>
-          <div><div className="text-2xl font-semibold text-ink tabular-nums">{perf.received}</div><div className="text-xs text-slate-500 mt-0.5">Received</div></div>
-          <div><div className="text-2xl font-semibold text-deep tabular-nums">{perf.queried}</div><div className="text-xs text-slate-500 mt-0.5">Queried</div></div>
-          <div><div className="text-2xl font-semibold text-ink tabular-nums">{avgTurn == null ? '—' : avgTurn + 'd'}</div><div className="text-xs text-slate-500 mt-0.5">Avg review time</div></div>
-        </div>
-      </div>
-
-      <div className="bg-paper border border-tint rounded-xl p-5 mb-6">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-serif text-lg font-medium text-ink">Daily activity — last 14 days</h2>
-          <div className="flex items-center gap-3 text-xs text-slate-400">
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-green" /> completed</span>
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-tint" /> received</span>
+        {/* Performance subsection */}
+        <div className="mb-1">
+          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">Performance</div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+            {[
+              { label: 'Open tasks', value: openTasks, cls: openTasks ? 'text-ink' : 'text-slate-300' },
+              { label: 'Awaited from client', value: awaited, cls: awaited ? 'text-amber-500' : 'text-slate-300' },
+              { label: 'Flagged', value: flagged, cls: flagged ? 'text-deep font-semibold' : 'text-slate-300' },
+              { label: 'Completed', value: completed, cls: completed ? 'text-green' : 'text-slate-300' },
+            ].map(({ label, value, cls }) => (
+              <div key={label} className="bg-paper border border-tint rounded-xl px-4 py-4 text-center">
+                <div className={`text-2xl font-semibold tabular-nums ${cls}`}>{value}</div>
+                <div className="text-xs text-slate-500 mt-1">{label}</div>
+              </div>
+            ))}
           </div>
         </div>
-        <div className="flex items-end gap-1 h-24">
-          {perDay.map((d) => (
-            <div key={d.day} className="flex-1 flex items-end gap-px h-full" title={`${d.day}: ${d.completed} completed, ${d.received} received`}>
-              <div className="flex-1 bg-green rounded-t" style={{ height: (d.completed / maxV) * 100 + '%' }} />
-              <div className="flex-1 bg-tint rounded-t" style={{ height: (d.received / maxV) * 100 + '%' }} />
-            </div>
-          ))}
-        </div>
-        <div className="flex gap-1 mt-1">
-          {perDay.map((d, i) => <div key={d.day} className="flex-1 text-center text-[9px] text-slate-400">{i % 3 === 0 || i === 13 ? d.day.slice(5) : ''}</div>)}
-        </div>
-      </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-5">
-        <div className="md:col-span-3">
-          <div className="bg-paper border border-tint rounded-xl overflow-hidden mb-6">
+        {/* Activity subsection */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Activity</div>
+            <div className="flex gap-1 bg-fog rounded-lg p-0.5 border border-tint">
+              {PERIODS.map(([k, l]) => (
+                <button key={k} onClick={() => setPeriod(k)} className={`text-xs px-2.5 py-1 rounded-md transition-colors ${period === k ? 'bg-paper text-ink shadow-sm border border-tint' : 'text-slate-500 hover:text-ink'}`}>{l}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* Daily chart */}
+          <div className="bg-paper border border-tint rounded-xl p-5 mb-4">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-sm font-medium text-ink">Daily activity — last 14 days</span>
+              <div className="flex items-center gap-3 text-xs text-slate-400">
+                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-green inline-block" /> completed</span>
+                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-tint inline-block" /> received</span>
+              </div>
+            </div>
+            <div className="flex items-end gap-1 h-24">
+              {perDay.map((d) => (
+                <div key={d.day} className="flex-1 flex items-end gap-px h-full group" title={`${d.day}: ${d.completed} completed, ${d.received} received`}>
+                  <div className="flex-1 bg-green rounded-t transition-all" style={{ height: Math.max(d.completed / maxV * 100, d.completed > 0 ? 4 : 0) + '%' }} />
+                  <div className="flex-1 bg-tint rounded-t transition-all" style={{ height: Math.max(d.received / maxV * 100, d.received > 0 ? 4 : 0) + '%' }} />
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-1 mt-1.5">
+              {perDay.map((d, i) => <div key={d.day} className="flex-1 text-center text-[9px] text-slate-400">{i % 3 === 0 || i === 13 ? d.day.slice(5) : ''}</div>)}
+            </div>
+          </div>
+
+          {/* Activity feed */}
+          <div className="bg-paper border border-tint rounded-xl overflow-hidden">
             <div className="px-5 py-3 border-b border-tint bg-fog/60 text-sm font-medium text-ink">
               What {name.split(' ')[0]} did <span className="text-slate-400 font-normal">— {periodLabel}</span>
             </div>
             {feedByDay.length === 0 ? (
               <p className="px-5 py-6 text-sm text-slate-400">No recorded activity {periodLabel}.</p>
             ) : (
-              <div className="max-h-[520px] overflow-y-auto">
+              <div className="max-h-[480px] overflow-y-auto">
                 {feedByDay.map((g) => (
                   <div key={g.date}>
                     <div className="px-5 py-1.5 bg-fog text-xs font-medium text-slate-500 sticky top-0">{relDay(g.date)} <span className="text-slate-300">· {g.items.length}</span></div>
@@ -315,29 +360,29 @@ export default function Person() {
             )}
           </div>
         </div>
-        <div className="md:col-span-2">
-          <div className="bg-paper border border-tint rounded-xl overflow-hidden mb-6">
-            <div className="px-5 py-3 border-b border-tint bg-fog/60 text-sm font-medium text-ink">Clients</div>
-            {engs.length === 0 ? (
-              <p className="px-5 py-4 text-sm text-slate-400">Not in charge of any clients yet.</p>
-            ) : (
-              <div className="divide-y divide-tint/60">
-                {engs.map((e) => {
-                  const client = clientOf(e);
-                  const m = engMetrics({ ...e, items: itemsByEng[e.id] || [] });
-                  const h = healthOf(m);
-                  return (
-                    <div key={e.id} onClick={() => navigate(`/engagements/${e.id}`)} className="px-5 py-2.5 flex items-center gap-3 hover:bg-fog cursor-pointer">
-                      <span className="flex-1 min-w-0 text-sm text-ink truncate">{client?.name} <span className="text-slate-400">FY{e.year}</span></span>
-                      <span className="text-xs text-slate-500 tabular-nums">{m.pct}%</span>
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full border shrink-0 ${h.cls}`}>{h.label}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+      </div>
+
+      {/* Clients list */}
+      <div className="bg-paper border border-tint rounded-xl overflow-hidden">
+        <div className="px-5 py-3 border-b border-tint bg-fog/60 text-sm font-medium text-ink">Clients</div>
+        {engs.length === 0 ? (
+          <p className="px-5 py-4 text-sm text-slate-400">Not in charge of any clients yet.</p>
+        ) : (
+          <div className="divide-y divide-tint/60">
+            {engs.map((e) => {
+              const client = clientOf(e);
+              const m = engMetrics({ ...e, items: itemsByEng[e.id] || [] });
+              const h = healthOf(m);
+              return (
+                <div key={e.id} onClick={() => navigate(`/engagements/${e.id}`)} className="px-5 py-2.5 flex items-center gap-3 hover:bg-fog cursor-pointer">
+                  <span className="flex-1 min-w-0 text-sm text-ink truncate">{client?.name} <span className="text-slate-400">FY{e.year}</span></span>
+                  <span className="text-xs text-slate-500 tabular-nums">{m.pct}%</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full border shrink-0 ${h.cls}`}>{h.label}</span>
+                </div>
+              );
+            })}
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
