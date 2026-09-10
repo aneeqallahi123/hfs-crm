@@ -16,6 +16,7 @@ const KPI_DESCRIPTIONS = {
   'To review': 'Items submitted by clients or staff waiting to be reviewed and signed off.',
   'Flagged': 'Tasks escalated as needing immediate attention due to age, risk, or being stalled.',
   'Files to match': 'Files received in the inbox that haven\'t been matched to a checklist item yet.',
+  'Completed': 'Total tasks completed',
 };
 
 // Tooltip — absolute, centred above the button.
@@ -377,6 +378,7 @@ export default function Dashboard() {
   const filesToMatch = rows.reduce((s, r) => s + (inboxByEng[r.e.id] || []).filter((f) => !f.assignedItemId && f.status !== 'Irrelevant').length, 0);
   const flaggedCount = rows.reduce((s, r) => s + r.items.filter((it) => it.headIncluded && progressTier(it)).length, 0);
   const openTasksCount = rows.reduce((s, r) => s + r.items.filter((it) => it.headIncluded && it.status === 'No progress').length, 0);
+  const completedCount = rows.reduce((s, r) => s + r.items.filter((it) => it.headIncluded && it.status === 'Completed').length, 0);
   const overallPct = rows.length ? Math.round(rows.reduce((s, r) => s + r.m.pct, 0) / rows.length) : 0;
   const clientCount = new Set(rows.map((r) => r.e.clientId)).size;
 
@@ -399,12 +401,13 @@ export default function Dashboard() {
       ) : (
         <>
           {/* KPI cards — no overflow:hidden so tooltips aren't clipped */}
-          <div className="grid grid-cols-2 md:grid-cols-5 bg-fog rounded-xl border border-tint divide-x divide-tint mb-10">
+          <div className="grid grid-cols-2 md:grid-cols-6 bg-fog rounded-xl border border-tint divide-x divide-tint mb-10">
             <Stat label="Open tasks" value={openTasksCount} />
             <Stat label="Awaited from clients" value={totalOutstanding} />
             <Stat label="To review" value={toReview} />
             <Stat label="Flagged" value={flaggedCount} />
             <Stat label="Files to match" value={filesToMatch} />
+            <Stat label="Completed" value={completedCount} />
           </div>
 
           <section>
