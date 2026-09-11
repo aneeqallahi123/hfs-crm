@@ -74,13 +74,20 @@
     {
       "parameters": {
         "url": "https://hfs-crm-staging-production.up.railway.app/api/webhooks/inbound-file",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json) }}",
         "options": {
           "timeout": 15000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-webhook-secret",
+              "value": "={{ $env.WEBHOOK_SECRET }}"
+            }
+          ]
         }
       },
       "name": "POST to CRM Webhook",
@@ -90,12 +97,7 @@
         1050,
         100
       ],
-      "credentials": {
-        "httpHeaderAuth": {
-          "name": "HFS CRM Webhook Secret"
-        }
-      },
-      "notes": "Points at the hfs-crm-staging Railway service, which tracks branch claude/happy-ramanujan-6xgc5d. Uses the same 'HFS CRM Webhook Secret' Header Auth credential as the live workflow (staging shares WEBHOOK_SECRET). Test with a WhatsApp group that has NO wa_group_id mapping so rows land in unmatched_inbox and never touch a real engagement's inbox."
+      "notes": "Points at the hfs-crm-staging Railway service (tracks branch claude/happy-ramanujan-6xgc5d). URL is pinned rather than $env because CRM_BACKEND_URL points at production. Secret still comes from $env.WEBHOOK_SECRET. Test from a WhatsApp group with NO wa_group_id mapping so rows land in unmatched_inbox and never touch a real engagement's inbox."
     },
     {
       "parameters": {

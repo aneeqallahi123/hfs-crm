@@ -73,14 +73,21 @@
     },
     {
       "parameters": {
-        "url": "https://hfs-crm-production.up.railway.app/api/webhooks/inbound-file",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
+        "url": "={{ $env.CRM_BACKEND_URL }}/api/webhooks/inbound-file",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json) }}",
         "options": {
           "timeout": 15000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-webhook-secret",
+              "value": "={{ $env.WEBHOOK_SECRET }}"
+            }
+          ]
         }
       },
       "name": "POST to CRM Webhook",
@@ -90,12 +97,7 @@
         1050,
         100
       ],
-      "credentials": {
-        "httpHeaderAuth": {
-          "name": "HFS CRM Webhook Secret"
-        }
-      },
-      "notes": "Sends ~1KB of metadata. The CRM stats the object in MinIO to confirm it exists and to read its true size, then inserts the inbox_files row. The x-webhook-secret header comes from the 'HFS CRM Webhook Secret' Header Auth credential — create it in n8n (Credentials -> Header Auth, name: x-webhook-secret, value: the WEBHOOK_SECRET). This n8n is community edition, where $env is NOT readable inside nodes, so the secret cannot be an expression."
+      "notes": "Sends ~1KB of metadata. The CRM stats the object in MinIO to confirm it exists and to read its true size, then inserts the inbox_files row. URL and secret come from the n8n container's own env (CRM_BACKEND_URL, WEBHOOK_SECRET), which works because the stack sets N8N_BLOCK_ENV_ACCESS_IN_NODE=false — so no secret is stored in this file."
     },
     {
       "parameters": {
@@ -174,11 +176,11 @@
   "_meta": {
     "templateCredsSetupCompleted": false,
     "notes": [
-      "Evolution API setup (Mini PC) — BOTH are required:",
-      "  1. S3_ENABLED=true with S3_ENDPOINT/S3_PORT/S3_BUCKET/S3_ACCESS_KEY/S3_SECRET_KEY pointed at MinIO over localhost. Evolution then writes received media straight to the bucket and reports a mediaUrl.",
-      "  2. Events -> Webhook -> 'Webhook Base64' switched OFF. With it ON the whole file arrives base64-encoded in this webhook's payload and n8n rejects anything over ~12MB with a 413 before any node runs.",
-      "In n8n: create a Header Auth credential named 'HFS CRM Webhook Secret' (name: x-webhook-secret, value: WEBHOOK_SECRET).",
-      "Recommended on the n8n container: N8N_DEFAULT_BINARY_DATA_MODE=filesystem.",
+      "Evolution API setup (docker-compose.yml, service evolution-api) — BOTH are required:",
+      "  1. S3_BUCKET must match the CRM's MINIO_BUCKET (hfc-documents). S3_ENABLED is already true; pointing it at a different bucket is why the CRM never saw the media.",
+      "  2. Events -> Webhook -> 'Webhook Base64' switched OFF in the manager UI. With it ON the whole file arrives base64-encoded in this webhook's payload and n8n rejects anything over ~12MB with a 413 before any node runs.",
+      "Requires CRM_BACKEND_URL and WEBHOOK_SECRET on the n8n container (both already set).",
+      "Recommended on the n8n container: N8N_DEFAULT_BINARY_DATA_MODE=filesystem, and N8N_PAYLOAD_SIZE_MAX if any base64 fallback traffic is expected (default 16MB).",
       "The bytes never pass through n8n or the CRM backend — only the MinIO object reference does. That is what lifts the old ~12MB ceiling to the full MAX_INBOX_FILE_MB (200MB).",
       "Evolution API delivers ALL group messages from ALL monitored groups — the CRM resolves the right engagement by groupId",
       "Files from groups not linked to any engagement are stored in unmatched_inbox for manual review"

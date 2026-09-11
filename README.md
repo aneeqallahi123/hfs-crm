@@ -358,6 +358,10 @@ S3_SECRET_KEY=<same as MINIO_SECRET_KEY>
 S3_REGION=us-east-1
 ```
 
+   Note `S3_BUCKET` **must equal `MINIO_BUCKET`** (`hfc-documents`). Evolution shipped here
+   pointed at a separate `evolution-media` bucket, which the CRM never reads — media was being
+   stored correctly and then ignored.
+
 2. In the Evolution manager UI (`localhost:8080/manager`), **Events → Webhook → "Webhook Base64" must be OFF**.
    With it on, Evolution embeds the entire file as base64 in the `MESSAGES_UPSERT` payload, and
    n8n rejects anything over ~12 MB with a 413 (`N8N_PAYLOAD_SIZE_MAX`, 16 MB default) before
@@ -367,7 +371,9 @@ S3_REGION=us-east-1
 - Docker at `localhost:5678`
 - Recommended: `N8N_DEFAULT_BINARY_DATA_MODE=filesystem`
 - Workflows imported from `n8n/` directory in this repo
-- Community edition — env vars not accessible inside nodes; secrets are hardcoded in workflow node values
+- `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` is set, so `$env` **is** readable inside nodes. Workflows
+  reference `$env.CRM_BACKEND_URL`, `$env.WEBHOOK_SECRET`, `$env.EVOLUTION_*` rather than
+  hardcoding secrets. (An earlier version of this README claimed the opposite.)
 
 ---
 
