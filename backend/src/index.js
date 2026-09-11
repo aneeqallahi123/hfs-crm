@@ -43,7 +43,8 @@ const apiLimiter  = rateLimit({ windowMs: 60 * 1000, max: 600 });
 app.use('/api/auth/me', apiLimiter, authRoutes);
 app.use('/api/auth/refresh', apiLimiter, authRoutes);
 app.use('/api/auth', authLimiter, authRoutes);
-app.use('/api/webhooks', webhookRoutes);      // webhook auth is its own shared-secret check, not JWT
+const webhookFileMb = parseInt(process.env.MAX_INBOX_FILE_MB || '50', 10) + 5; // base64 overhead ~33%
+app.use('/api/webhooks', express.json({ limit: `${webhookFileMb}mb` }), webhookRoutes); // webhook auth is its own shared-secret check, not JWT
 
 app.use('/api', apiLimiter, verifyToken);     // everything below requires JWT
 
