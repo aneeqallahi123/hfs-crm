@@ -8,6 +8,7 @@ import Btn from '../components/Btn.jsx';
 import EditableText from '../components/EditableText.jsx';
 import OwnerSelect from '../components/OwnerSelect.jsx';
 import StatusSelect from '../components/StatusSelect.jsx';
+import StudentStatusSelect from '../components/StudentStatusSelect.jsx';
 import {
   today, isAdhoc, owedToUs, progressTier, noProgressDays, ageLabel, TIER_STYLE,
   engMetrics, withStatus, composeMessage, afterSend, normalizePhone, fmtSize,
@@ -372,9 +373,12 @@ function ItemRow({ it, team, canEdit, isStudent, onChange, engagementId, selectM
           : it.owner
             ? <span className="text-[10px] text-slate-500 bg-fog px-2 py-0.5 rounded shrink-0 max-w-[6rem] truncate" title={it.owner}>{it.owner.split(' ')[0]}</span>
             : null)}
-        {canEdit ? <StatusSelect it={it} onChange={(v) => onChange(withStatus(it, v))} /> : (
-          <span className={`text-[11px] rounded-full border px-2.5 py-0.5 shrink-0 ${statusStyle(it)}`}>{statusLabel(it)}</span>
-        )}
+        {canEdit
+          ? (isStudent
+            ? <StudentStatusSelect it={it} onChange={(v) => onChange(withStatus(it, v))} />
+            : <StatusSelect it={it} onChange={(v) => onChange(withStatus(it, v))} />)
+          : <span className={`text-[11px] rounded-full border px-2.5 py-0.5 shrink-0 ${statusStyle(it)}`}>{statusLabel(it)}</span>
+        }
         <button onClick={() => setOpen(!open)} title="Details" className="text-slate-300 hover:text-slate-600 w-5 shrink-0 text-center">{open ? '▾' : '⋯'}</button>
       </div>
 
