@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api/client.js';
+import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 
 const ROLE_OPTIONS = ['partner', 'manager', 'student'];
 
 export default function PersonEdit() {
+  const { user } = useAuth();
   const { name } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
+  const roleOptions = user?.role === 'manager' ? ROLE_OPTIONS.filter((r) => r !== 'partner') : ROLE_OPTIONS;
 
   const [person, setPerson] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -124,7 +127,7 @@ export default function PersonEdit() {
             onChange={(e) => setEditRole(e.target.value)}
             className="w-full border border-tint rounded-lg px-3 py-2.5 text-sm bg-paper focus:outline-none focus:border-green transition-colors appearance-none"
           >
-            {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>)}
+            {roleOptions.map((r) => <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>)}
           </select>
         </div>
 

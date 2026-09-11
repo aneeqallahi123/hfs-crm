@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client.js';
+import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { today, isAdhoc, progressTier, daysBetween, ageLabel, FLAG_DAYS } from '../lib/metrics.js';
 
 const ROLE_OPTIONS = ['partner', 'manager', 'student'];
 
 export default function Team() {
+  const { user } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
+  const roleOptions = user?.role === 'manager' ? ROLE_OPTIONS.filter((r) => r !== 'partner') : ROLE_OPTIONS;
   const [members, setMembers] = useState([]);
   const [engagements, setEngagements] = useState([]);
   const [itemsByEng, setItemsByEng] = useState({});
@@ -141,7 +144,7 @@ export default function Team() {
             <label className="text-xs font-medium text-slate-500">
               Role
               <select value={role} onChange={(e) => setRole(e.target.value)} className="block mt-1 border border-tint rounded-md px-3 py-2 text-sm bg-paper focus:outline-none focus:border-green">
-                {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>)}
+                {roleOptions.map((r) => <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>)}
               </select>
             </label>
           </div>

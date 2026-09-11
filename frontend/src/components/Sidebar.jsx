@@ -91,7 +91,7 @@ export default function Sidebar() {
     { path: '/tasks', label: 'Tasks', hint: isStudent ? 'Everything open in your name' : 'Every open task, by person', icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="shrink-0"><rect x="1" y="2.5" width="14" height="2" rx="1" fill="currentColor" opacity="0.9"/><rect x="1" y="7" width="14" height="2" rx="1" fill="currentColor" opacity="0.9"/><rect x="1" y="11.5" width="9" height="2" rx="1" fill="currentColor" opacity="0.9"/></svg>
     )},
-    ...(isPartner ? [{ path: '/team', label: 'Team', hint: "Who's carrying what", icon: (
+    ...(isPartnerOrManager ? [{ path: '/team', label: 'Team', hint: "Who's carrying what", icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="shrink-0"><circle cx="6" cy="5" r="2.5" fill="currentColor" opacity="0.9"/><path d="M1 13c0-2.76 2.24-5 5-5s5 2.24 5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.9"/><circle cx="12" cy="5" r="2" fill="currentColor" opacity="0.6"/><path d="M15 13c0-2.21-1.34-4.1-3.25-4.72" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.6"/></svg>
     )}] : []),
     ...(!isStudent ? [{ path: '/events', label: 'Activity', hint: 'Who changed what, and when', icon: (
