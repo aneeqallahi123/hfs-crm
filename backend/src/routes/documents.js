@@ -1,11 +1,10 @@
 import { Router } from 'express';
-import multer from 'multer';
 import { pool } from '../db/pool.js';
 import { rbac } from '../middleware/rbac.js';
+import { upload } from '../middleware/upload.js';
 import { uploadFile, deleteFile, streamFile } from '../storage/minio.js';
 
 const router = Router();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 // POST /api/documents/upload
 router.post('/upload', (req, res, next) => {
@@ -18,7 +17,7 @@ router.post('/upload', (req, res, next) => {
   });
 }, async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'File required' });
-  const { engagementId, itemId } = req.body;
+  const { engagementId, itemId, categoryName } = req.body;
   if (!engagementId) return res.status(400).json({ error: 'engagementId required' });
 
   try {
@@ -33,14 +32,15 @@ router.post('/upload', (req, res, next) => {
     const { rows } = await pool.query(
       `INSERT INTO inbox_files
          (engagement_id, name, size, mime_type, minio_key, uploaded_at, received_at, source,
-          assigned_item_id, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $6, 'manual', $7, $8)
+          assigned_item_id, status, category_name)
+       VALUES ($1, $2, $3, $4, $5, $6, $6, 'manual', $7, $8, $9)
        RETURNING *`,
       [
         engagementId, req.file.originalname, req.file.size,
         req.file.mimetype, minioKey, now,
         itemId || null,
         itemId ? 'Matched' : 'Unmatched',
+        categoryName || '',
       ]
     );
 

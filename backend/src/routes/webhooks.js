@@ -40,7 +40,7 @@ router.post('/inbound-file', webhookAuth, async (req, res) => {
     // File size guard
     if (buffer.length > MAX_FILE_BYTES) {
       return res.status(413).json({
-        error: `File exceeds limit (${Math.round(buffer.length / 1024 / 1024)}MB > ${MAX_INBOX_FILE_MB || 50}MB)`,
+        error: `File exceeds limit (${Math.round(buffer.length / 1024 / 1024)}MB > ${process.env.MAX_INBOX_FILE_MB || 50}MB)`,
       });
     }
 

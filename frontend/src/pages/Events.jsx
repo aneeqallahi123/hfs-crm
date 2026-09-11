@@ -1,8 +1,80 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import { today, daysBetween } from '../lib/metrics.js';
+
+function FilterDropdown({ label, value, options, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState({ top: 0, left: 0 });
+  const btnRef = useRef(null);
+  const panelRef = useRef(null);
+
+  const reposition = useCallback(() => {
+    if (!btnRef.current) return;
+    const r = btnRef.current.getBoundingClientRect();
+    setCoords({ top: r.bottom + 6, left: r.left });
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    reposition();
+    function onScroll() { reposition(); }
+    function onKey(e) { if (e.key === 'Escape') setOpen(false); }
+    function onMouse(e) {
+      const inBtn = btnRef.current && btnRef.current.contains(e.target);
+      const inPanel = panelRef.current && panelRef.current.contains(e.target);
+      if (!inBtn && !inPanel) setOpen(false);
+    }
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onMouse);
+    return () => {
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onMouse);
+    };
+  }, [open, reposition]);
+
+  const selected = options.find((o) => o.value === value);
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        onClick={() => setOpen(!open)}
+        className={`flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border transition-colors ${
+          value !== 'all' ? 'bg-deep text-paper border-deep' : 'bg-paper text-ink border-tint hover:bg-fog'
+        }`}
+      >
+        <span>{label}{value !== 'all' && selected ? `: ${selected.label}` : ''}</span>
+        <svg className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && createPortal(
+        <div
+          ref={panelRef}
+          style={{ position: 'fixed', top: coords.top, left: coords.left, zIndex: 9999 }}
+          className="bg-paper border border-tint rounded-xl shadow-xl py-1 min-w-[180px]"
+        >
+          {options.map((o) => (
+            <button
+              key={o.value}
+              onClick={() => { onChange(o.value); setOpen(false); }}
+              className={`w-full text-left px-3 py-1.5 text-sm flex items-center justify-between gap-4 hover:bg-fog ${value === o.value ? 'text-deep font-medium' : 'text-ink'}`}
+            >
+              <span>{o.label}</span>
+              {o.count != null && <span className="font-mono text-xs text-slate-400">{o.count}</span>}
+            </button>
+          ))}
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
 
 function person(v) { return v || 'unassigned'; }
 
@@ -76,7 +148,20 @@ export default function Events() {
   }
   const relDay = (d) => { const n = daysBetween(d, td); return n === 0 ? 'Today' : n === 1 ? 'Yesterday' : d; };
   const hhmm = (iso) => { try { const d = new Date(iso); return isNaN(d.getTime()) ? '' : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; } catch { return ''; } };
-  const chip = (on) => `text-xs px-2.5 py-1 rounded-full border transition-colors ${on ? 'bg-deep text-paper border-deep' : 'text-ink border-tint hover:bg-fog'}`;
+  const DAYS_OPTIONS = [
+    { value: 'all', label: 'All time' },
+    { value: '1', label: 'Today' },
+    { value: '7', label: '7 days' },
+    { value: '30', label: '30 days' },
+  ];
+
+  const teamOptions = [
+    { value: 'all', label: 'Everyone' },
+    ...team.map((p) => ({ value: p.name, label: p.name, count: evs.filter((ev) => ev.by === p.name).length })),
+    { value: '', label: 'No name', count: evs.filter((ev) => !ev.by).length },
+  ];
+
+  const daysValue = days === 3650 ? 'all' : String(days);
 
   if (loading) return <div className="stagger p-8 max-w-5xl"><div className="text-sm text-slate-400">Loading…</div></div>;
 
@@ -88,15 +173,19 @@ export default function Events() {
         <p className="text-sm text-slate-500 mt-1">Every change, in order, under the name it was made with. Reversals, date edits, deletions and reassignments are marked.</p>
       </header>
 
-      <div className="flex flex-wrap items-center gap-1.5 mb-2">
-        <button onClick={() => setWho('all')} className={chip(who === 'all')}>Everyone</button>
-        {team.map((p) => <button key={p.id} onClick={() => setWho(who === p.name ? 'all' : p.name)} className={chip(who === p.name)}>{p.name}</button>)}
-        <button onClick={() => setWho(who === '' ? 'all' : '')} className={chip(who === '')} title="Changes made with no user attached">No name</button>
-      </div>
-      <div className="flex flex-wrap items-center gap-1.5 mb-5">
-        {[[1, 'Today'], [7, '7 days'], [30, '30 days'], [3650, 'All']].map(([n, l]) => (
-          <button key={n} onClick={() => setDays(n)} className={chip(days === n)}>{l}</button>
-        ))}
+      <div className="flex flex-wrap items-center gap-2 mb-5">
+        <FilterDropdown
+          label="Team"
+          value={who}
+          options={teamOptions}
+          onChange={(v) => setWho(v)}
+        />
+        <FilterDropdown
+          label="Timeline"
+          value={daysValue}
+          options={DAYS_OPTIONS}
+          onChange={(v) => setDays(v === 'all' ? 3650 : Number(v))}
+        />
         <span className="flex-1" />
         <span className="font-mono text-[11px] text-slate-500 tabular-nums">{evs.length} change{evs.length === 1 ? '' : 's'}</span>
       </div>

@@ -1,7 +1,11 @@
 import { Router } from 'express';
 import { pool } from '../db/pool.js';
 import { rbac } from '../middleware/rbac.js';
+import { upload } from '../middleware/upload.js';
 import { logEvent } from '../db/events.js';
+import { minioClient, getPresignedUrl, deleteFile } from '../storage/minio.js';
+
+const BUCKET = process.env.MINIO_BUCKET;
 
 const router = Router();
 
@@ -33,6 +37,15 @@ function toItem(row) {
     adhoc: row.adhoc,
     due: row.due,
     adHocOwner: row.ad_hoc_owner || '',
+    contextDocKey: row.context_doc_key || '',
+    contextDocName: row.context_doc_name || '',
+    contextDocSize: row.context_doc_size || 0,
+    hideLibContextDoc: row.hide_lib_context_doc || false,
+    // Library-level context doc (populated by JOIN in GET endpoint)
+    libContextDocKey: row.lib_context_doc_key || '',
+    libContextDocName: row.lib_context_doc_name || '',
+    libContextDocUrl: row.lib_context_doc_url || null,
+    contextDocUrl: row.context_doc_url || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -56,10 +69,29 @@ router.get('/', async (req, res) => {
     }
 
     const { rows } = await pool.query(
-      'SELECT * FROM items WHERE engagement_id = $1 ORDER BY head_id, ref',
+      `SELECT i.*,
+              li.context_doc_key  AS lib_context_doc_key,
+              li.context_doc_name AS lib_context_doc_name
+       FROM items i
+       LEFT JOIN engagements e ON e.id = i.engagement_id
+       LEFT JOIN library_heads lh ON lh.head_id = i.head_id AND lh.module = e.module
+       LEFT JOIN library_items li ON li.head_id_fk = lh.id AND li.ref = i.ref
+       WHERE i.engagement_id = $1
+       ORDER BY i.head_id, i.ref`,
       [engagementId]
     );
-    res.json({ items: rows.map(toItem) });
+    const items = await Promise.all(rows.map(async row => {
+      let libContextDocUrl = null;
+      if (row.lib_context_doc_key) {
+        try { libContextDocUrl = await getPresignedUrl(row.lib_context_doc_key); } catch {}
+      }
+      let contextDocUrl = null;
+      if (row.context_doc_key) {
+        try { contextDocUrl = await getPresignedUrl(row.context_doc_key); } catch {}
+      }
+      return toItem({ ...row, lib_context_doc_url: libContextDocUrl, context_doc_url: contextDocUrl });
+    }));
+    res.json({ items });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error' });
@@ -115,7 +147,8 @@ router.patch('/:id', async (req, res) => {
   const allowed = [
     'status', 'statusSince', 'peak', 'owner', 'adHocOwner', 'fileNote', 'dateRequested',
     'dateReceived', 'queried', 'dateQueried', 'followups', 'lastContact',
-    'remarks', 'due', 'value', 'kind', 'requestable', 'headIncluded', 'ref', 'section', 'sub', 'p'
+    'remarks', 'due', 'value', 'kind', 'requestable', 'headIncluded', 'ref', 'section', 'sub', 'p',
+    'hideLibContextDoc',
   ];
 
   const colMap = {
@@ -126,6 +159,7 @@ router.patch('/:id', async (req, res) => {
     lastContact: 'last_contact', remarks: 'remarks', due: 'due', value: 'value', kind: 'kind',
     requestable: 'requestable', headIncluded: 'head_included', ref: 'ref',
     section: 'section', sub: 'sub', p: 'p',
+    hideLibContextDoc: 'hide_lib_context_doc',
   };
 
   try {
@@ -241,6 +275,49 @@ router.delete('/:id', rbac('partner', 'manager'), async (req, res) => {
         entity: 'item', entityId: before.id, label: before.p, type: 'item.removed', from: before.owner,
       });
     }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/items/:id/context-doc — upload engagement-specific context doc
+router.post('/:id/context-doc', rbac('partner', 'manager'), upload.single('file'), async (req, res) => {
+  const { id } = req.params;
+  if (!req.file) return res.status(400).json({ error: 'file required' });
+  try {
+    const { rows } = await pool.query('SELECT context_doc_key FROM items WHERE id = $1', [id]);
+    if (!rows[0]) return res.status(404).json({ error: 'Item not found' });
+    if (rows[0].context_doc_key) {
+      try { await deleteFile(rows[0].context_doc_key); } catch {}
+    }
+    const ext = req.file.originalname.split('.').pop();
+    const key = `item-context/${id}/${Date.now()}.${ext}`;
+    await minioClient.putObject(BUCKET, key, req.file.buffer, req.file.buffer.length, { 'Content-Type': req.file.mimetype });
+    await pool.query(
+      `UPDATE items SET context_doc_key=$1, context_doc_name=$2, context_doc_size=$3, updated_at=NOW() WHERE id=$4`,
+      [key, req.file.originalname, req.file.size, id]
+    );
+    let contextDocUrl = null;
+    try { contextDocUrl = await getPresignedUrl(key); } catch {}
+    res.json({ contextDocKey: key, contextDocName: req.file.originalname, contextDocSize: req.file.size, contextDocUrl });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /api/items/:id/context-doc
+router.delete('/:id/context-doc', rbac('partner', 'manager'), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { rows } = await pool.query('SELECT context_doc_key FROM items WHERE id = $1', [id]);
+    if (!rows[0]) return res.status(404).json({ error: 'Item not found' });
+    if (rows[0].context_doc_key) {
+      try { await deleteFile(rows[0].context_doc_key); } catch {}
+    }
+    await pool.query(`UPDATE items SET context_doc_key='', context_doc_name='', context_doc_size=0, updated_at=NOW() WHERE id=$1`, [id]);
     res.json({ ok: true });
   } catch (err) {
     console.error(err);

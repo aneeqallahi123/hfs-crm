@@ -10,6 +10,7 @@ import ClientDetail from './pages/ClientDetail.jsx';
 import EngagementDetail from './pages/EngagementDetail.jsx';
 import Team from './pages/Team.jsx';
 import Person from './pages/Person.jsx';
+import PersonEdit from './pages/PersonEdit.jsx';
 import Tasks from './pages/Tasks.jsx';
 import Events from './pages/Events.jsx';
 import Library from './pages/Library.jsx';
@@ -52,7 +53,7 @@ function AppRoutes() {
         <Route
           path="team"
           element={
-            <RequireRole roles={['partner']}>
+            <RequireRole roles={['partner', 'manager']}>
               <Team />
             </RequireRole>
           }
@@ -60,8 +61,16 @@ function AppRoutes() {
         <Route
           path="team/:name"
           element={
-            <RequireRole roles={['partner']}>
+            <RequireRole roles={['partner', 'manager']}>
               <Person />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="team/:name/edit"
+          element={
+            <RequireRole roles={['partner', 'manager']}>
+              <PersonEdit />
             </RequireRole>
           }
         />

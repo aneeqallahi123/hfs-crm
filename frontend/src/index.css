@@ -75,6 +75,7 @@ input[type="date"]::-webkit-calendar-picker-indicator { opacity: .5; }
 .toast.error { background: #7f1d1d; }
 @keyframes toastIn { from { opacity: 0; transform: translateY(8px) scale(.98) } to { opacity: 1; transform: none } }
 
+@keyframes slideDown { from { opacity: 0; transform: translateY(-4px) } to { opacity: 1; transform: none } }
 @keyframes viewFade { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: none } }
 .view-fade { animation: viewFade .32s cubic-bezier(.2,.7,.2,1) both; }
 @media (prefers-reduced-motion: reduce) { .toast, .view-fade { animation: none !important } }

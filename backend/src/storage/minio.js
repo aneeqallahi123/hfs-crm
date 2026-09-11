@@ -2,15 +2,23 @@ import * as Minio from 'minio';
 
 const BUCKET = process.env.MINIO_BUCKET;
 
+// Reused across calls: MinIO sits behind a Cloudflare Tunnel, so a fresh Client
+// per call would mean a new TLS handshake (and a repeated bucket-region lookup,
+// which the SDK otherwise caches on the client instance) on every operation.
+let client = null;
+
 function getClient() {
   if (!process.env.MINIO_ENDPOINT) throw new Error('MinIO not configured');
-  return new Minio.Client({
-    endPoint: process.env.MINIO_ENDPOINT,
-    port: parseInt(process.env.MINIO_PORT) || 443,
-    useSSL: process.env.MINIO_USE_SSL !== 'false',
-    accessKey: process.env.MINIO_ACCESS_KEY,
-    secretKey: process.env.MINIO_SECRET_KEY,
-  });
+  if (!client) {
+    client = new Minio.Client({
+      endPoint: process.env.MINIO_ENDPOINT,
+      port: parseInt(process.env.MINIO_PORT) || 443,
+      useSSL: process.env.MINIO_USE_SSL !== 'false',
+      accessKey: process.env.MINIO_ACCESS_KEY,
+      secretKey: process.env.MINIO_SECRET_KEY,
+    });
+  }
+  return client;
 }
 
 // Exported for routes that call putObject directly

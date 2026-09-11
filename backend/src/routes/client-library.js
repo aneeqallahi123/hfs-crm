@@ -1,12 +1,11 @@
 import { Router } from 'express';
 import { pool } from '../db/pool.js';
 import { rbac } from '../middleware/rbac.js';
-import multer from 'multer';
+import { upload } from '../middleware/upload.js';
 import { minioClient, getPresignedUrl, deleteFile } from '../storage/minio.js';
 import { SECTION_NAMES } from '../db/library_seed.js';
 
 const router = Router();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 // ── Library: merged view ─────────────────────────────────────────────────────
 
