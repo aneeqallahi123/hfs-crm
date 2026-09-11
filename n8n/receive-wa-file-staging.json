@@ -1,0 +1,184 @@
+{
+  "name": "HFS CRM — Receive WA File (v2 STAGING)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "hfs-receive-wa-file-v2",
+        "options": {}
+      },
+      "name": "Evolution API Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ],
+      "notes": "STAGING ONLY. Temporary parallel pipeline used to validate the metadata-only inbound path before it reaches main. The live workflow (hfs-receive-wa-file) fans out to this path, so one real WhatsApp message exercises both pipelines and production behaviour is unchanged. Delete this workflow after cutover."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.body.data?.messageType }}",
+              "operation": "regex",
+              "value2": "documentMessage|imageMessage|audioMessage|videoMessage|stickerMessage|pttMessage"
+            }
+          ]
+        }
+      },
+      "name": "Filter: Media Only",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        450,
+        300
+      ],
+      "notes": "Only forward messages that contain a downloadable file. Text/reaction/status events are dropped."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.body.data?.key?.remoteJid }}",
+              "operation": "endsWith",
+              "value2": "@g.us"
+            }
+          ]
+        }
+      },
+      "name": "Filter: Groups Only",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        650,
+        200
+      ],
+      "notes": "Only process messages from group chats (remoteJid ends with @g.us). Individual DMs are ignored."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalise the MESSAGES_UPSERT payload down to the metadata the CRM needs.\n// Evolution API (S3_ENABLED=true) has already written the file to MinIO by this point,\n// so we forward only the object reference — never the bytes. This is what makes 200MB\n// files work: the payload below is ~1KB regardless of file size.\n\nconst out = [];\n\nfor (const item of $input.all()) {\n  const data = item.json.body?.data ?? item.json.data ?? {};\n  const message = data.message ?? {};\n  const key = data.key ?? {};\n\n  // The media object lives under a type-specific key; whichever is present is ours.\n  const media =\n    message.documentMessage ||\n    message.imageMessage ||\n    message.videoMessage ||\n    message.audioMessage ||\n    message.stickerMessage ||\n    message.documentWithCaptionMessage?.message?.documentMessage ||\n    {};\n\n  // Evolution has moved mediaUrl between these spots across versions — take the first hit.\n  // Deliberately NOT falling back to media.url: that is WhatsApp's own CDN URL and its bytes\n  // are encrypted, so using it would turn \"S3 is off\" into a confusing 404 from the CRM.\n  const mediaUrl = data.mediaUrl || message.mediaUrl || null;\n\n  if (!mediaUrl) {\n    throw new Error(\n      'No mediaUrl in the webhook payload. Check that S3_ENABLED=true on Evolution API and ' +\n      'that it can reach MinIO — without it the file is never written to storage. ' +\n      'messageType=' + (data.messageType || 'unknown')\n    );\n  }\n\n  const fileName =\n    media.fileName ||\n    media.caption ||\n    `${data.messageType || 'media'}_${key.id || Date.now()}`;\n\n  out.push({\n    json: {\n      groupId: key.remoteJid || '',\n      sender: key.participant || key.remoteJid || '',\n      messageId: key.id || '',\n      fileName,\n      mimeType: media.mimetype || 'application/octet-stream',\n      size: Number(media.fileLength) || null,\n      mediaUrl,\n    },\n  });\n}\n\nreturn out;"
+      },
+      "name": "Extract Media Metadata",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        100
+      ],
+      "notes": "Pulls groupId / sender / messageId / fileName / mimeType / size / mediaUrl out of the Evolution payload. Throws with a clear message if mediaUrl is absent, which is the signal that S3_ENABLED is off or MinIO is unreachable."
+    },
+    {
+      "parameters": {
+        "url": "https://hfs-crm-staging-production.up.railway.app/api/webhooks/inbound-file",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "name": "POST to CRM Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1050,
+        100
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "HFS CRM Webhook Secret"
+        }
+      },
+      "notes": "Points at the hfs-crm-staging Railway service, which tracks branch claude/happy-ramanujan-6xgc5d. Uses the same 'HFS CRM Webhook Secret' Header Auth credential as the live workflow (staging shares WEBHOOK_SECRET). Test with a WhatsApp group that has NO wa_group_id mapping so rows land in unmatched_inbox and never touch a real engagement's inbox."
+    },
+    {
+      "parameters": {
+        "errorMessage": "CRM webhook returned an error — check execution log"
+      },
+      "name": "Log Error",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        200
+      ],
+      "notes": "The CRM webhook is idempotent (dedup by messageId), so a retry is safe. It now returns real 4xx/5xx responses instead of always 200, so failures surface as failed executions here rather than vanishing into the backend log."
+    }
+  ],
+  "connections": {
+    "Evolution API Webhook": {
+      "main": [
+        [
+          {
+            "node": "Filter: Media Only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter: Media Only": {
+      "main": [
+        [
+          {
+            "node": "Filter: Groups Only",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Filter: Groups Only": {
+      "main": [
+        [
+          {
+            "node": "Extract Media Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Extract Media Metadata": {
+      "main": [
+        [
+          {
+            "node": "POST to CRM Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST to CRM Webhook": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Log Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "_meta": {
+    "templateCredsSetupCompleted": false,
+    "notes": [
+      "TEMPORARY staging workflow — delete after the change is merged and the live workflow is cut over.",
+      "Target: hfs-crm-staging (https://hfs-crm-staging-production.up.railway.app), branch claude/happy-ramanujan-6xgc5d.",
+      "Staging shares the production Postgres, so ALWAYS test from a group with no wa_group_id mapping: those rows go to unmatched_inbox and are trivially deleted.",
+      "Requires the same Evolution setup as the live workflow: S3_ENABLED=true, and 'Webhook Base64' OFF.",
+      "Pass criteria before merging: a 200MB file lands in MinIO with the correct size recorded, a bad mediaUrl returns a non-2xx (failed execution here), and the legacy fileBase64 body still works."
+    ]
+  }
+}
