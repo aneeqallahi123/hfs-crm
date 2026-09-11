@@ -28,6 +28,7 @@ export const minioClient = {
   bucketExists: (...args) => getClient().bucketExists(...args),
   makeBucket: (...args) => getClient().makeBucket(...args),
   presignedGetObject: (...args) => getClient().presignedGetObject(...args),
+  statObject: (...args) => getClient().statObject(...args),
 };
 
 export async function ensureBucket() {
@@ -44,8 +45,22 @@ export async function uploadFile(engagementId, originalName, buffer, mimeType) {
   return key;
 }
 
-export async function getPresignedUrl(key) {
-  return getClient().presignedGetObject(BUCKET, key, 3600);
+// `filename` makes MinIO send a Content-Disposition on the presigned response, so a
+// browser sent straight to the object still saves it under its original name.
+export async function getPresignedUrl(key, filename, contentType) {
+  const reqParams = {};
+  if (filename) {
+    reqParams['response-content-disposition'] = `inline; filename="${filename.replace(/"/g, '')}"`;
+  }
+  if (contentType) reqParams['response-content-type'] = contentType;
+  return getClient().presignedGetObject(BUCKET, key, 3600, reqParams);
+}
+
+// Returns { size, metaData, ... } for an object, or throws if it does not exist.
+// Used by the inbound webhook to confirm Evolution API really wrote the media
+// before a row claiming it exists is inserted.
+export async function statFile(key) {
+  return getClient().statObject(BUCKET, key);
 }
 
 export async function deleteFile(key) {

@@ -37,9 +37,14 @@ const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100 });
 // that fetches lists on every navigation — same throttling behavior, more headroom.
 const apiLimiter  = rateLimit({ windowMs: 60 * 1000, max: 600 });
 
-// Webhook route gets its own body parser with a higher limit (must come before the global one)
-const webhookFileMb = parseInt(process.env.MAX_INBOX_FILE_MB || '200', 10) + 70; // base64 overhead ~33%
-app.use('/api/webhooks', express.json({ limit: `${webhookFileMb}mb` }), webhookRoutes);
+// Webhook route gets its own body parser (must come before the global one).
+// Inbound WhatsApp files arrive as a ~1KB metadata payload — Evolution API writes the bytes
+// straight to MinIO and we receive only the object key — so this limit only has to cover the
+// legacy base64 fallback, which is itself capped at MAX_INBOX_BASE64_MB. Sizing it off
+// MAX_INBOX_FILE_MB is what used to buffer hundreds of MB per request in the Railway container.
+const legacyBase64Mb = parseInt(process.env.MAX_INBOX_BASE64_MB || '15', 10);
+const webhookBodyMb = Math.ceil(legacyBase64Mb * 1.37) + 1; // base64 inflates ~33%, plus JSON envelope
+app.use('/api/webhooks', express.json({ limit: `${webhookBodyMb}mb` }), webhookRoutes);
 
 app.use(express.json({ limit: '10mb' }));
 

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { pool } from '../db/pool.js';
-import { uploadFile } from '../storage/minio.js';
+import { uploadFile, statFile } from '../storage/minio.js';
 
 const router = Router();
 
@@ -11,85 +11,157 @@ function webhookAuth(req, res, next) {
   next();
 }
 
+const BUCKET = process.env.MINIO_BUCKET;
 const MAX_FILE_BYTES = parseInt(process.env.MAX_INBOX_FILE_MB || '200', 10) * 1024 * 1024;
+
+// The legacy base64 path is capped far lower than MAX_INBOX_FILE_MB on purpose: it
+// carries the bytes through n8n and Railway, where Cloudflare's 100MB proxy cap, n8n's
+// 16MB default payload limit and the 1.33x base64 inflation all apply. Large files must
+// come through the mediaUrl path instead, where the bytes never leave the Mini PC.
+const LEGACY_BASE64_MAX_BYTES = parseInt(process.env.MAX_INBOX_BASE64_MB || '15', 10) * 1024 * 1024;
+
+// Evolution API (S3_ENABLED) writes received media straight to MinIO and reports it as a
+// URL shaped like {endpoint}/{bucket}/{key}, sometimes with presign query params. We only
+// want the object key — the URL's host is the Mini PC's internal address and is not
+// reachable from Railway, but it does not need to be: the object is already in our bucket.
+export function deriveMinioKey(mediaRef) {
+  if (!mediaRef || typeof mediaRef !== 'string') return null;
+
+  let path;
+  try {
+    path = new URL(mediaRef).pathname; // also drops any query string
+  } catch {
+    path = mediaRef.split('?')[0]; // already a bare key rather than a URL
+  }
+
+  let key;
+  try {
+    key = decodeURIComponent(path);
+  } catch {
+    key = path; // malformed percent-encoding — take it as-is
+  }
+  key = key.replace(/^\/+/, '');
+
+  // Path-style URLs include the bucket as the first segment; keys do not.
+  if (BUCKET && (key === BUCKET || key.startsWith(`${BUCKET}/`))) {
+    key = key.slice(BUCKET.length).replace(/^\/+/, '');
+  }
+
+  if (!key || key.split('/').some((seg) => seg === '..')) return null;
+  return key;
+}
 
 // POST /api/webhooks/inbound-file
 // Called by n8n when Evolution API receives a WhatsApp file.
-// n8n must call Evolution API's /chat/getBase64FromMediaMessage first to decrypt the media,
-// then POST { fileBase64, mimeType, ... } here — never a raw CDN URL (those bytes are encrypted).
+//
+// Preferred payload: { mediaUrl | mediaKey, groupId, sender, messageId, fileName, mimeType }
+//   Evolution API has already written the bytes to MinIO (S3_ENABLED, pointed at MinIO over
+//   localhost), so this request is ~1KB of metadata no matter how large the file is. That is
+//   what makes 200MB files work: the bytes never cross n8n, Railway, or Cloudflare.
+//
+// Legacy payload: { fileBase64, ... } — still accepted for small files so that the old
+// workflow keeps working during rollout, but capped at MAX_INBOX_BASE64_MB.
 router.post('/inbound-file', webhookAuth, async (req, res) => {
-  const { engagementId, groupId, sender, messageId, fileName, fileBase64, mimeType } = req.body;
+  const {
+    engagementId, groupId, sender, messageId, fileName, mimeType,
+    mediaUrl, mediaKey, fileBase64,
+  } = req.body;
 
-  if (!fileBase64) {
-    return res.status(400).json({ error: 'fileBase64 required — pass the decrypted file from Evolution API getBase64FromMediaMessage' });
+  if (!mediaUrl && !mediaKey && !fileBase64) {
+    return res.status(400).json({
+      error: 'mediaUrl (or mediaKey) required — enable S3_ENABLED on Evolution API so it writes media to MinIO directly. fileBase64 is accepted only for small files.',
+    });
   }
 
-  // Dedup: skip if this messageId was already stored
-  if (messageId) {
-    try {
+  try {
+    // Dedup: skip if this messageId was already stored
+    if (messageId) {
       const { rows: dup } = await pool.query(
         'SELECT id FROM inbox_files WHERE message_id = $1 LIMIT 1',
         [messageId]
       );
       if (dup[0]) return res.json({ received: true, duplicate: true });
-    } catch (err) {
-      console.error('Webhook dedup check error:', err);
-      return res.status(500).json({ error: 'Failed to process file' });
     }
-  }
 
-  // Decode and size-check synchronously so we can reject before accepting
-  const buffer = Buffer.from(fileBase64, 'base64');
-  if (buffer.length > MAX_FILE_BYTES) {
-    return res.status(413).json({
-      error: `File exceeds limit (${Math.round(buffer.length / 1024 / 1024)}MB > ${process.env.MAX_INBOX_FILE_MB || 200}MB)`,
-    });
-  }
+    let resolvedEngagementId = engagementId || null;
+    if (!resolvedEngagementId && groupId) {
+      const { rows } = await pool.query(
+        'SELECT id FROM engagements WHERE wa_group_id = $1 LIMIT 1',
+        [groupId]
+      );
+      if (rows[0]) resolvedEngagementId = rows[0].id;
+    }
 
-  // Respond immediately — n8n has a 30s timeout and the MinIO upload
-  // (Railway → internet → Cloudflare Tunnel → local Mini PC) can exceed that
-  // for any non-trivial file. Processing continues in the background.
-  res.json({ received: true, queued: true });
+    let minioKey;
+    let size;
 
-  // Background processing — errors are logged only, n8n already got its 200
-  setImmediate(async () => {
-    try {
-      let resolvedEngagementId = engagementId || null;
-
-      if (!resolvedEngagementId && groupId) {
-        const { rows } = await pool.query(
-          'SELECT id FROM engagements WHERE wa_group_id = $1 LIMIT 1',
-          [groupId]
-        );
-        if (rows[0]) resolvedEngagementId = rows[0].id;
+    if (mediaUrl || mediaKey) {
+      minioKey = deriveMinioKey(mediaKey || mediaUrl);
+      if (!minioKey) {
+        return res.status(400).json({ error: `Could not derive a MinIO object key from "${mediaKey || mediaUrl}"` });
       }
 
-      const storageId = resolvedEngagementId || 'unmatched';
-      const minioKey = await uploadFile(storageId, fileName, buffer, mimeType || 'application/octet-stream');
-      const now = new Date().toISOString();
-
-      if (resolvedEngagementId) {
-        await pool.query(
-          `INSERT INTO inbox_files
-             (engagement_id, name, size, mime_type, minio_key, received_at, uploaded_at,
-              source, sender, message_id, group_id, status)
-           VALUES ($1, $2, $3, $4, $5, $6, $6, 'whatsapp', $7, $8, $9, 'Unmatched')`,
-          [resolvedEngagementId, fileName, buffer.length, mimeType || '', minioKey,
-           now, sender || '', messageId || '', groupId || '']
-        );
-      } else {
-        await pool.query(
-          `INSERT INTO unmatched_inbox
-             (group_id, sender, message_id, name, size, mime_type, minio_key, received_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-          [groupId || '', sender || '', messageId || '', fileName,
-           buffer.length, mimeType || '', minioKey, now]
-        );
+      // Confirm Evolution actually wrote the object, and take its size from MinIO rather
+      // than trusting the webhook. A missing object is a real failure and must surface to
+      // n8n as one, not be recorded as a row pointing at nothing.
+      let stat;
+      try {
+        stat = await statFile(minioKey);
+      } catch (err) {
+        console.error(`Inbound file: MinIO stat failed for key "${minioKey}":`, err.message);
+        return res.status(404).json({
+          error: `Media not found in MinIO at key "${minioKey}" — check that Evolution's S3_BUCKET matches MINIO_BUCKET (${BUCKET})`,
+        });
       }
-    } catch (err) {
-      console.error('Webhook inbound-file background error:', err);
+
+      size = stat.size;
+      if (size > MAX_FILE_BYTES) {
+        return res.status(413).json({
+          error: `File exceeds limit (${Math.round(size / 1024 / 1024)}MB > ${process.env.MAX_INBOX_FILE_MB || 200}MB)`,
+        });
+      }
+    } else {
+      const buffer = Buffer.from(fileBase64, 'base64');
+      if (buffer.length > LEGACY_BASE64_MAX_BYTES) {
+        return res.status(413).json({
+          error: `File too large for the base64 path (${Math.round(buffer.length / 1024 / 1024)}MB > ${process.env.MAX_INBOX_BASE64_MB || 15}MB). Send mediaUrl instead — enable S3_ENABLED on Evolution API.`,
+        });
+      }
+      size = buffer.length;
+      minioKey = await uploadFile(
+        resolvedEngagementId || 'unmatched',
+        fileName,
+        buffer,
+        mimeType || 'application/octet-stream'
+      );
     }
-  });
+
+    const now = new Date().toISOString();
+
+    if (resolvedEngagementId) {
+      await pool.query(
+        `INSERT INTO inbox_files
+           (engagement_id, name, size, mime_type, minio_key, received_at, uploaded_at,
+            source, sender, message_id, group_id, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $6, 'whatsapp', $7, $8, $9, 'Unmatched')`,
+        [resolvedEngagementId, fileName, size, mimeType || '', minioKey,
+         now, sender || '', messageId || '', groupId || '']
+      );
+    } else {
+      await pool.query(
+        `INSERT INTO unmatched_inbox
+           (group_id, sender, message_id, name, size, mime_type, minio_key, received_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [groupId || '', sender || '', messageId || '', fileName,
+         size, mimeType || '', minioKey, now]
+      );
+    }
+
+    res.json({ received: true, minioKey, size, matched: Boolean(resolvedEngagementId) });
+  } catch (err) {
+    console.error('Webhook inbound-file error:', err);
+    res.status(500).json({ error: 'Failed to process file' });
+  }
 });
 
 // POST /api/webhooks/portal-sync

@@ -28,7 +28,11 @@ jobs:
       - run: cd frontend && npm run build
         env:
           VITE_API_URL: https://hfs-crm-production.up.railway.app/api
+      # Guarded: this publishes to the live Pages project with --branch main, so without a
+      # condition every pull_request build would deploy straight to production. PRs still run
+      # the build above, so a broken build is still caught before merge.
       - name: Deploy to Cloudflare Pages
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}

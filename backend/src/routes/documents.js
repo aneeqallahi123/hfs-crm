@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { pool } from '../db/pool.js';
 import { rbac } from '../middleware/rbac.js';
 import { upload } from '../middleware/upload.js';
-import { uploadFile, deleteFile, streamFile } from '../storage/minio.js';
+import { uploadFile, deleteFile, getPresignedUrl } from '../storage/minio.js';
 
 const router = Router();
 
@@ -94,12 +94,12 @@ router.get('/:fileId/download', async (req, res) => {
     const mimeByExt = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', xls: 'application/vnd.ms-excel', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', doc: 'application/msword' };
     const mime = file.mime_type || mimeByExt[ext] || 'application/octet-stream';
 
-    res.setHeader('Content-Type', mime);
-    res.setHeader('Content-Disposition', `inline; filename="${filename.replace(/"/g, '')}"`);
-
-    const stream = await streamFile(file.minio_key);
-    stream.pipe(res);
-    stream.on('error', (err) => { console.error('Stream error', err); if (!res.headersSent) res.status(500).end(); });
+    // Redirect to a presigned URL so the browser fetches the object straight from MinIO.
+    // Streaming it through here instead would pull every byte Mini PC -> Cloudflare Tunnel ->
+    // Railway -> browser, doubling the transfer and stalling on 200MB WhatsApp files.
+    // MinIO applies the Content-Type and Content-Disposition we pass with the signature.
+    const url = await getPresignedUrl(file.minio_key, filename, mime);
+    res.redirect(302, url);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error' });

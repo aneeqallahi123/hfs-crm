@@ -197,7 +197,7 @@ Items carry a `kind` field: `document` (default) | `number` | `information` — 
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/webhooks/inbound-file` | WhatsApp file from n8n → MinIO → `inbox_files`. Unknown groups stored in `unmatched_inbox`. Deduplicates by `message_id`. Rejects files > 50 MB with 413. |
+| POST | `/webhooks/inbound-file` | WhatsApp file metadata from n8n → `inbox_files`. Evolution API has already written the bytes to MinIO; this verifies the object with `statObject` and records it. Unknown groups stored in `unmatched_inbox`. Deduplicates by `message_id`. Rejects files > `MAX_INBOX_FILE_MB` (200 MB) with 413. Also accepts a legacy `fileBase64` body for files under `MAX_INBOX_BASE64_MB` (15 MB). |
 | POST | `/webhooks/portal-sync` | Idempotent status update |
 
 ---
@@ -225,7 +225,8 @@ Nodes: Webhook → Auth Check (`x-webhook-secret` header) → Evolution API `POS
 
 **`receive-wa-file`** — inbound  
 Trigger: Evolution API `MESSAGES_UPSERT` webhook  
-Nodes: Filter media messages → Extract fields → `POST /api/webhooks/inbound-file` → Log errors
+Nodes: Filter media → Filter groups → Extract media metadata (Code) → `POST /api/webhooks/inbound-file` → Log errors
+Sends metadata only; requires `S3_ENABLED=true` **and** `Webhook Base64` **off** in Evolution API.
 
 ### Outbound — "Send to group" flow
 
@@ -240,10 +241,13 @@ Nodes: Filter media messages → Extract fields → `POST /api/webhooks/inbound-
 
 1. Client shares file in linked WA group
 2. Evolution API fires `MESSAGES_UPSERT` webhook to n8n
-3. n8n filters for media, POSTs `{ groupId, mediaUrl, fileName, mimeType, sender, messageId }` to `/webhooks/inbound-file`
-4. Backend resolves engagement by `wa_group_id`, downloads file from Evolution API, uploads to MinIO
-5. `inbox_files` row inserted with `source='whatsapp'`; unrecognised groups go to `unmatched_inbox`
-6. Files appear in the engagement's Documents inbox
+3. Evolution API (with `S3_ENABLED=true`) has already written the decrypted file straight to MinIO over localhost, and reports it as `mediaUrl` in the payload
+4. n8n filters for media and POSTs **metadata only** — `{ groupId, mediaUrl, fileName, mimeType, size, sender, messageId }` — to `/webhooks/inbound-file`
+5. Backend resolves engagement by `wa_group_id`, derives the MinIO object key from `mediaUrl`, and `statObject`s it to confirm it exists and read its true size
+6. `inbox_files` row inserted with `source='whatsapp'`; unrecognised groups go to `unmatched_inbox`
+7. Files appear in the engagement's Documents inbox
+
+**The file bytes never pass through n8n, Railway or Cloudflare** — only the MinIO object reference does. This is what allows 200 MB files: the old path base64-encoded the file through n8n (16 MB payload cap) and pushed it back to MinIO through the Cloudflare Tunnel (100 MB request-body cap on the Free plan).
 
 ---
 
@@ -337,8 +341,31 @@ sudo launchctl start com.cloudflare.cloudflared
 - Docker Compose at `localhost:9000` (API) and `localhost:9001` (console)
 - Bucket: `hfc-documents` (auto-created on backend startup)
 
+### Evolution API → MinIO (required for large inbound files)
+
+Evolution writes received WhatsApp media directly to MinIO on the same machine, so the bytes
+never cross the network. Both of these are required:
+
+1. In Evolution's `.env` / compose:
+```env
+S3_ENABLED=true
+S3_ENDPOINT=host.docker.internal   # or the MinIO container name on a shared Docker network
+S3_PORT=9000
+S3_USE_SSL=false                   # localhost hop — must NOT go via minio.hfccrm.org
+S3_BUCKET=hfc-documents            # same bucket as MINIO_BUCKET
+S3_ACCESS_KEY=<same as MINIO_ACCESS_KEY>
+S3_SECRET_KEY=<same as MINIO_SECRET_KEY>
+S3_REGION=us-east-1
+```
+
+2. In the Evolution manager UI (`localhost:8080/manager`), **Events → Webhook → "Webhook Base64" must be OFF**.
+   With it on, Evolution embeds the entire file as base64 in the `MESSAGES_UPSERT` payload, and
+   n8n rejects anything over ~12 MB with a 413 (`N8N_PAYLOAD_SIZE_MAX`, 16 MB default) before
+   any node runs — the execution may not even appear in n8n's log.
+
 ### n8n
 - Docker at `localhost:5678`
+- Recommended: `N8N_DEFAULT_BINARY_DATA_MODE=filesystem`
 - Workflows imported from `n8n/` directory in this repo
 - Community edition — env vars not accessible inside nodes; secrets are hardcoded in workflow node values
 
@@ -398,8 +425,8 @@ Railway account: `grand-generosity` (hfc202612)
 | Endpoint group | Limit |
 |---------------|-------|
 | `/auth/login`, `/auth/logout` | 100 requests / 15 min |
-| `/auth/me`, `/auth/refresh` | 300 requests / min |
-| All other `/api/*` | 300 requests / min |
+| `/auth/me`, `/auth/refresh` | 600 requests / min |
+| All other `/api/*` | 600 requests / min |
 
 ---
 

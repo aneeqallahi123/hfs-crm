@@ -10,8 +10,11 @@
       "name": "Evolution API Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [250, 300],
-      "notes": "Configure this URL in Evolution API as the webhook for MESSAGES_UPSERT events on your instance."
+      "position": [
+        250,
+        300
+      ],
+      "notes": "Configure this URL in Evolution API as the webhook for MESSAGES_UPSERT events on your instance. IMPORTANT: 'Webhook Base64' must be OFF in Evolution (Events -> Webhook). With it ON, Evolution embeds the whole file as base64 in this payload, and anything over ~12MB is rejected here by N8N_PAYLOAD_SIZE_MAX (16MB default) before a single node runs."
     },
     {
       "parameters": {
@@ -28,7 +31,10 @@
       "name": "Filter: Media Only",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
-      "position": [450, 300],
+      "position": [
+        450,
+        300
+      ],
       "notes": "Only forward messages that contain a downloadable file. Text/reaction/status events are dropped."
     },
     {
@@ -46,50 +52,50 @@
       "name": "Filter: Groups Only",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
-      "position": [650, 200],
+      "position": [
+        650,
+        200
+      ],
       "notes": "Only process messages from group chats (remoteJid ends with @g.us). Individual DMs are ignored."
     },
     {
       "parameters": {
-        "url": "=http://localhost:8080/chat/getBase64FromMediaMessage/my-whatsapp",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "apikey", "value": "C9221582-AA4C-495D-AE6E-6CEC348D292C" },
-            { "name": "Content-Type", "value": "application/json" }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ message: $json.body.data, convertToMp4: false }) }}",
-        "options": { "timeout": 30000 }
+        "jsCode": "// Normalise the MESSAGES_UPSERT payload down to the metadata the CRM needs.\n// Evolution API (S3_ENABLED=true) has already written the file to MinIO by this point,\n// so we forward only the object reference — never the bytes. This is what makes 200MB\n// files work: the payload below is ~1KB regardless of file size.\n\nconst out = [];\n\nfor (const item of $input.all()) {\n  const data = item.json.body?.data ?? item.json.data ?? {};\n  const message = data.message ?? {};\n  const key = data.key ?? {};\n\n  // The media object lives under a type-specific key; whichever is present is ours.\n  const media =\n    message.documentMessage ||\n    message.imageMessage ||\n    message.videoMessage ||\n    message.audioMessage ||\n    message.stickerMessage ||\n    message.documentWithCaptionMessage?.message?.documentMessage ||\n    {};\n\n  // Evolution has moved mediaUrl between these spots across versions — take the first hit.\n  // Deliberately NOT falling back to media.url: that is WhatsApp's own CDN URL and its bytes\n  // are encrypted, so using it would turn \"S3 is off\" into a confusing 404 from the CRM.\n  const mediaUrl = data.mediaUrl || message.mediaUrl || null;\n\n  if (!mediaUrl) {\n    throw new Error(\n      'No mediaUrl in the webhook payload. Check that S3_ENABLED=true on Evolution API and ' +\n      'that it can reach MinIO — without it the file is never written to storage. ' +\n      'messageType=' + (data.messageType || 'unknown')\n    );\n  }\n\n  const fileName =\n    media.fileName ||\n    media.caption ||\n    `${data.messageType || 'media'}_${key.id || Date.now()}`;\n\n  out.push({\n    json: {\n      groupId: key.remoteJid || '',\n      sender: key.participant || key.remoteJid || '',\n      messageId: key.id || '',\n      fileName,\n      mimeType: media.mimetype || 'application/octet-stream',\n      size: Number(media.fileLength) || null,\n      mediaUrl,\n    },\n  });\n}\n\nreturn out;"
       },
-      "name": "Evolution: Decrypt & Get Base64",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [850, 100],
-      "notes": "Evolution API decrypts the WhatsApp media encryption and returns the file as base64. This is required — the raw CDN URL contains encrypted bytes that cannot be opened directly."
+      "name": "Extract Media Metadata",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        100
+      ],
+      "notes": "Pulls groupId / sender / messageId / fileName / mimeType / size / mediaUrl out of the Evolution payload. Throws with a clear message if mediaUrl is absent, which is the signal that S3_ENABLED is off or MinIO is unreachable."
     },
     {
       "parameters": {
-        "url": "={{ $env.CRM_BACKEND_URL }}/api/webhooks/inbound-file",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "x-webhook-secret", "value": "={{ $env.WEBHOOK_SECRET }}" },
-            { "name": "Content-Type", "value": "application/json" }
-          ]
-        },
+        "url": "https://hfs-crm-production.up.railway.app/api/webhooks/inbound-file",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ groupId: $('Filter: Groups Only').item.json.body.data.key.remoteJid, sender: $('Filter: Groups Only').item.json.body.data.key.participant || $('Filter: Groups Only').item.json.body.data.key.remoteJid, messageId: $('Filter: Groups Only').item.json.body.data.key.id, fileName: $('Filter: Groups Only').item.json.body.data.message?.documentMessage?.fileName || $('Filter: Groups Only').item.json.body.data.message?.imageMessage?.caption || ($('Filter: Groups Only').item.json.body.data.messageType + '_' + $('Filter: Groups Only').item.json.body.data.key.id), fileBase64: $json.base64, mimeType: $json.mimetype || $('Filter: Groups Only').item.json.body.data.message?.documentMessage?.mimetype || $('Filter: Groups Only').item.json.body.data.message?.imageMessage?.mimetype || 'application/octet-stream' }) }}",
-        "options": { "timeout": 30000 }
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 15000
+        }
       },
       "name": "POST to CRM Webhook",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1050, 100],
-      "notes": "Sends decrypted file as base64 to the CRM backend. Backend decodes → uploads to MinIO → inserts inbox_files row."
+      "position": [
+        1050,
+        100
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "HFS CRM Webhook Secret"
+        }
+      },
+      "notes": "Sends ~1KB of metadata. The CRM stats the object in MinIO to confirm it exists and to read its true size, then inserts the inbox_files row. The x-webhook-secret header comes from the 'HFS CRM Webhook Secret' Header Auth credential — create it in n8n (Credentials -> Header Auth, name: x-webhook-secret, value: the WEBHOOK_SECRET). This n8n is community edition, where $env is NOT readable inside nodes, so the secret cannot be an expression."
     },
     {
       "parameters": {
@@ -98,40 +104,82 @@
       "name": "Log Error",
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
-      "position": [1250, 200],
-      "notes": "No retry loop — the CRM webhook is idempotent (dedup by messageId). If it fails, review logs."
+      "position": [
+        1250,
+        200
+      ],
+      "notes": "The CRM webhook is idempotent (dedup by messageId), so a retry is safe. It now returns real 4xx/5xx responses instead of always 200, so failures surface as failed executions here rather than vanishing into the backend log."
     }
   ],
   "connections": {
-    "Evolution API Webhook": { "main": [[{ "node": "Filter: Media Only", "type": "main", "index": 0 }]] },
+    "Evolution API Webhook": {
+      "main": [
+        [
+          {
+            "node": "Filter: Media Only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Filter: Media Only": {
       "main": [
-        [{ "node": "Filter: Groups Only", "type": "main", "index": 0 }],
+        [
+          {
+            "node": "Filter: Groups Only",
+            "type": "main",
+            "index": 0
+          }
+        ],
         []
       ]
     },
     "Filter: Groups Only": {
       "main": [
-        [{ "node": "Evolution: Decrypt & Get Base64", "type": "main", "index": 0 }],
+        [
+          {
+            "node": "Extract Media Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ],
         []
       ]
     },
-    "Evolution: Decrypt & Get Base64": {
+    "Extract Media Metadata": {
       "main": [
-        [{ "node": "POST to CRM Webhook", "type": "main", "index": 0 }],
-        []
+        [
+          {
+            "node": "POST to CRM Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "POST to CRM Webhook": {
-      "main": [[], [{ "node": "Log Error", "type": "main", "index": 0 }]]
+      "main": [
+        [],
+        [
+          {
+            "node": "Log Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "_meta": {
     "templateCredsSetupCompleted": false,
     "notes": [
-      "Required env vars in n8n: CRM_BACKEND_URL (e.g. https://your-crm.railway.app), WEBHOOK_SECRET",
-      "In Evolution API: set this workflow's webhook URL for event MESSAGES_UPSERT on your instance",
-      "The Evolution API decrypt call (getBase64FromMediaMessage) is mandatory — WhatsApp CDN URLs contain encrypted bytes.",
+      "Evolution API setup (Mini PC) — BOTH are required:",
+      "  1. S3_ENABLED=true with S3_ENDPOINT/S3_PORT/S3_BUCKET/S3_ACCESS_KEY/S3_SECRET_KEY pointed at MinIO over localhost. Evolution then writes received media straight to the bucket and reports a mediaUrl.",
+      "  2. Events -> Webhook -> 'Webhook Base64' switched OFF. With it ON the whole file arrives base64-encoded in this webhook's payload and n8n rejects anything over ~12MB with a 413 before any node runs.",
+      "In n8n: create a Header Auth credential named 'HFS CRM Webhook Secret' (name: x-webhook-secret, value: WEBHOOK_SECRET).",
+      "Recommended on the n8n container: N8N_DEFAULT_BINARY_DATA_MODE=filesystem.",
+      "The bytes never pass through n8n or the CRM backend — only the MinIO object reference does. That is what lifts the old ~12MB ceiling to the full MAX_INBOX_FILE_MB (200MB).",
       "Evolution API delivers ALL group messages from ALL monitored groups — the CRM resolves the right engagement by groupId",
       "Files from groups not linked to any engagement are stored in unmatched_inbox for manual review"
     ]
