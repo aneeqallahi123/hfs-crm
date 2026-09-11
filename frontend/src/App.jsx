@@ -53,7 +53,7 @@ function AppRoutes() {
         <Route
           path="team"
           element={
-            <RequireRole roles={['partner']}>
+            <RequireRole roles={['partner', 'manager']}>
               <Team />
             </RequireRole>
           }
@@ -61,7 +61,7 @@ function AppRoutes() {
         <Route
           path="team/:name"
           element={
-            <RequireRole roles={['partner']}>
+            <RequireRole roles={['partner', 'manager']}>
               <Person />
             </RequireRole>
           }
@@ -69,7 +69,7 @@ function AppRoutes() {
         <Route
           path="team/:name/edit"
           element={
-            <RequireRole roles={['partner']}>
+            <RequireRole roles={['partner', 'manager']}>
               <PersonEdit />
             </RequireRole>
           }

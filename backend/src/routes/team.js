@@ -20,13 +20,16 @@ router.get('/', rbac('partner', 'manager'), async (req, res) => {
 });
 
 // POST /api/team
-router.post('/', rbac('partner'), async (req, res) => {
+router.post('/', rbac('partner', 'manager'), async (req, res) => {
   const { name, username, password, role } = req.body;
   if (!name || !username || !password || !role) {
     return res.status(400).json({ error: 'name, username, password, role required' });
   }
   if (!['partner', 'manager', 'student'].includes(role)) {
     return res.status(400).json({ error: 'Invalid role' });
+  }
+  if (req.user.role === 'manager' && role === 'partner') {
+    return res.status(403).json({ error: 'Managers cannot create partner accounts' });
   }
   try {
     const hash = await bcrypt.hash(password, 12);
@@ -49,7 +52,7 @@ router.post('/', rbac('partner'), async (req, res) => {
 });
 
 // PATCH /api/team/:id
-router.patch('/:id', rbac('partner'), async (req, res) => {
+router.patch('/:id', rbac('partner', 'manager'), async (req, res) => {
   const { name, username, role, password } = req.body;
   try {
     const { rows: beforeRows } = await pool.query('SELECT * FROM users WHERE id = $1', [req.params.id]);
@@ -65,6 +68,9 @@ router.patch('/:id', rbac('partner'), async (req, res) => {
     if (role) {
       if (!['partner', 'manager', 'student'].includes(role)) {
         return res.status(400).json({ error: 'Invalid role' });
+      }
+      if (req.user.role === 'manager' && role === 'partner') {
+        return res.status(403).json({ error: 'Managers cannot assign the partner role' });
       }
       updates.push(`role = $${i++}`); values.push(role);
     }
@@ -104,7 +110,7 @@ router.patch('/:id', rbac('partner'), async (req, res) => {
 });
 
 // DELETE /api/team/:id  — deactivates, does not hard-delete
-router.delete('/:id', rbac('partner'), async (req, res) => {
+router.delete('/:id', rbac('partner', 'manager'), async (req, res) => {
   try {
     const { rows } = await pool.query(
       `UPDATE users SET active = false, updated_at = NOW()
