@@ -1007,7 +1007,6 @@ function FilesModal({ engagementId, files, heads, onClose, onAdd, onMatch, onUnm
   return (
     <Modal title="Documents" onClose={onClose} wide>
       <div className="flex items-start justify-between gap-4 mb-3">
-        <p className="text-xs text-slate-600 max-w-lg">Everything the client sends lands here. Pick a file on the left, then the task it belongs to on the right; the task moves to <span className="font-medium text-ink">To review</span>.</p>
         <label className="cursor-pointer shrink-0">
           <span className="inline-block text-sm px-4 py-2 rounded-md bg-green text-paper hover:bg-deep">{uploading ? 'Uploading…' : 'Add files'}</span>
           <input type="file" multiple className="hidden" disabled={uploading} onChange={(e) => { if (e.target.files?.length) handleAdd(e.target.files); e.target.value = ''; }} />
@@ -1421,8 +1420,7 @@ export default function EngagementDetail() {
   const nextStep = (() => {
     if (libraryHeads.length > 0 && scopedIn.length === 0) return { text: 'Start by choosing which areas apply to this client.', action: 'scope' };
     if (stageCount.request) return { text: `${stageCount.request} request${stageCount.request > 1 ? "s haven't" : " hasn't"} been sent to the client yet.`, action: 'request' };
-    if (stageCount.review) return { text: `${stageCount.review} file${stageCount.review > 1 ? 's are' : ' is'} in and waiting for review.`, action: 'review' };
-    if (stageCount.awaited) return { text: `Waiting on the client for ${stageCount.awaited} item${stageCount.awaited > 1 ? 's' : ''}. Send a reminder if it has been a while.`, action: 'followup' };
+if (stageCount.awaited) return { text: `Waiting on the client for ${stageCount.awaited} item${stageCount.awaited > 1 ? 's' : ''}. Send a reminder if it has been a while.`, action: 'followup' };
     if (stageCount.internal) return { text: `${stageCount.internal} item${stageCount.internal > 1 ? 's' : ''} left for the team.`, action: 'internal' };
     if (items.length === 0) return { text: 'Nothing here yet. Add a task below.', action: null };
     return { text: 'Everything for this client is complete.', action: null };
