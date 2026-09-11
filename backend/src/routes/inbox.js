@@ -21,6 +21,7 @@ function toFile(row) {
     status: row.status,
     assignedItemId: row.assigned_item_id,
     note: row.note || '',
+    categoryName: row.category_name || '',
     createdAt: row.created_at,
   };
 }
@@ -54,12 +55,12 @@ router.get('/', async (req, res) => {
 
 // PATCH /api/inbox/:fileId/assign
 router.patch('/:fileId/assign', async (req, res) => {
-  const { itemId } = req.body; // null to unassign
+  const { itemId, categoryName } = req.body; // null to unassign
   try {
     const newStatus = itemId ? 'Matched' : 'Unmatched';
     const { rows } = await pool.query(
-      `UPDATE inbox_files SET assigned_item_id = $1, status = $2 WHERE id = $3 RETURNING *`,
-      [itemId || null, newStatus, req.params.fileId]
+      `UPDATE inbox_files SET assigned_item_id = $1, status = $2, category_name = COALESCE($3, category_name) WHERE id = $4 RETURNING *`,
+      [itemId || null, newStatus, itemId ? (categoryName || '') : null, req.params.fileId]
     );
     if (!rows[0]) return res.status(404).json({ error: 'File not found' });
 

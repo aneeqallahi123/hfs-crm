@@ -118,7 +118,6 @@ function parseValues(raw) {
 function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, selected, onToggleSel, onRemove, itemFiles = [], onFileUploaded, onFileRemoved }) {
   const [open, setOpen] = useState(false);
   const toast = useToast();
-  const [uploading, setUploading] = useState(false);
   const [downloading, setDownloading] = useState(null);
   const [removing, setRemoving] = useState(null);
   const fileInputRef = React.useRef(null);
@@ -136,38 +135,6 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
   const isDone = it.status === 'Completed';
   const fileCount = itemFiles.length;
   const hasFiles = isTextType ? textVals.some((v) => v.trim()) : fileCount > 0;
-
-  async function uploadFile(file) {
-    setUploading(true);
-    const fd = new FormData();
-    fd.append('file', file);
-    fd.append('engagementId', engagementId);
-    fd.append('itemId', it.id);
-    try {
-      const res = await api.documents.upload(fd);
-      const rawFile = res?.file;
-      const done = it.status === 'Completed' || it.status === 'NA';
-      await onChange({ fileNote: file.name, status: done ? it.status : 'Under Review', queried: false });
-      if (rawFile && onFileUploaded) {
-        onFileUploaded({
-          id: rawFile.id,
-          name: rawFile.name,
-          size: rawFile.size,
-          mimeType: rawFile.mime_type,
-          uploadedAt: rawFile.uploaded_at,
-          assignedItemId: rawFile.assigned_item_id,
-          engagementId: rawFile.engagement_id,
-          status: rawFile.status,
-        });
-      }
-      toast('New version uploaded', 'success');
-    } catch (err) {
-      toast(err.message, 'error');
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  }
 
   function openFile(fileId) {
     api.documents.open(fileId);
@@ -187,12 +154,64 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
     }
   }
 
-  // Sort files chronologically
-  const sortedFiles = [...itemFiles].sort((a, b) => {
-    const ta = a.uploadedAt ? new Date(a.uploadedAt).getTime() : 0;
-    const tb = b.uploadedAt ? new Date(b.uploadedAt).getTime() : 0;
-    return ta - tb;
+  // Group files by categoryName
+  const filesByCategory = (() => {
+    const cats = {};
+    for (const f of itemFiles) {
+      const cat = f.categoryName || '';
+      if (!cats[cat]) cats[cat] = [];
+      cats[cat].push(f);
+    }
+    // Sort each category chronologically
+    for (const cat of Object.keys(cats)) {
+      cats[cat].sort((a, b) => (a.uploadedAt ? new Date(a.uploadedAt).getTime() : 0) - (b.uploadedAt ? new Date(b.uploadedAt).getTime() : 0));
+    }
+    return cats;
+  })();
+  const categoryNames = Object.keys(filesByCategory).sort((a, b) => {
+    // named categories before empty
+    if (!a && b) return 1;
+    if (a && !b) return -1;
+    return a.localeCompare(b);
   });
+
+  const [addingCategory, setAddingCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [uploadingForCat, setUploadingForCat] = useState(null); // category name or '' for new
+
+  async function uploadFileForCategory(file, categoryName) {
+    setUploadingForCat(categoryName);
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('engagementId', engagementId);
+    fd.append('itemId', it.id);
+    fd.append('categoryName', categoryName);
+    try {
+      const res = await api.documents.upload(fd);
+      const rawFile = res?.file;
+      const done = it.status === 'Completed' || it.status === 'NA';
+      await onChange({ fileNote: file.name, status: done ? it.status : 'Under Review', queried: false });
+      if (rawFile && onFileUploaded) {
+        onFileUploaded({
+          id: rawFile.id,
+          name: rawFile.name,
+          size: rawFile.size,
+          mimeType: rawFile.mime_type,
+          uploadedAt: rawFile.uploaded_at,
+          assignedItemId: rawFile.assigned_item_id,
+          engagementId: rawFile.engagement_id,
+          status: rawFile.status,
+          categoryName: rawFile.category_name || categoryName,
+        });
+      }
+      toast('File uploaded', 'success');
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      setUploadingForCat(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
 
   return (
     <div className={`group pl-3 pr-4 py-2 border-l-4 border-transparent ${it.status === 'NA' ? 'opacity-40' : ''} ${selected ? 'bg-fog/60' : ''} transition-colors`}>
@@ -241,7 +260,7 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
       {open && (
         <div className="mt-2 pb-1 space-y-3" style={{ paddingLeft: '2rem' }}>
 
-          {/* ── Files (versioned) or text values ──────────────────────────────── */}
+          {/* ── Files (by category with versioning) or text values ── */}
           {isTextType ? (
             <div className="space-y-1.5">
               {textVals.map((v, idx) => (
@@ -278,51 +297,109 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
             </div>
           ) : (
             <div className="space-y-2">
-              {/* Version history header */}
-              {sortedFiles.length > 0 && (
-                <div className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">
-                  {sortedFiles.length === 1 ? 'File' : `${sortedFiles.length} versions`}
-                </div>
+              {categoryNames.length === 0 && !canEdit && (
+                <div className="text-xs text-slate-400">No files attached</div>
               )}
-              <div className="space-y-1.5">
-                {sortedFiles.map((f, idx) => (
-                  <FileRow
-                    key={f.id}
-                    file={f}
-                    versionNum={idx + 1}
-                    canEdit={canEdit}
-                    downloading={downloading === f.id}
-                    removing={removing === f.id}
-                    onOpen={() => openFile(f.id)}
-                    onRemove={() => removeAttachedFile(f.id)}
-                    onNoteChange={(note) => {
-                      if (onFileUploaded) onFileUploaded({ ...f, note });
-                      if (onFileRemoved) onFileRemoved(f.id);
-                    }}
-                  />
-                ))}
-              </div>
+              {categoryNames.map((cat) => {
+                const catFiles = filesByCategory[cat];
+                const isUploadingThis = uploadingForCat === cat;
+                return (
+                  <div key={cat || '__uncategorised'} className="rounded-lg border border-tint overflow-hidden">
+                    {/* Category header */}
+                    <div className="flex items-center gap-2 px-2.5 py-1.5 bg-fog/50 border-b border-tint/60">
+                      <svg className="shrink-0 text-slate-400" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                      </svg>
+                      <span className="text-[11px] font-medium text-slate-600 flex-1 truncate">{cat || 'Uncategorised'}</span>
+                      <span className="text-[10px] text-slate-400 tabular-nums shrink-0">{catFiles.length} version{catFiles.length !== 1 ? 's' : ''}</span>
+                    </div>
+                    {/* Versions */}
+                    <div className="divide-y divide-tint/40">
+                      {catFiles.map((f, idx) => (
+                        <FileRow
+                          key={f.id}
+                          file={f}
+                          versionNum={idx + 1}
+                          canEdit={canEdit}
+                          downloading={downloading === f.id}
+                          removing={removing === f.id}
+                          onOpen={() => openFile(f.id)}
+                          onRemove={() => removeAttachedFile(f.id)}
+                          onNoteChange={(note) => {
+                            if (onFileUploaded) onFileUploaded({ ...f, note });
+                          }}
+                        />
+                      ))}
+                    </div>
+                    {/* Add new version to this category */}
+                    {canEdit && (
+                      <label className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs cursor-pointer transition-colors border-t border-tint/40 ${isUploadingThis ? 'text-slate-400 cursor-wait' : 'text-slate-400 hover:text-green hover:bg-fog/40'}`}>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
+                        </svg>
+                        {isUploadingThis ? 'Uploading…' : '+ Add new version'}
+                        <input type="file" className="hidden" disabled={isUploadingThis} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFileForCategory(f, cat); e.target.value = ''; }} />
+                      </label>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Add new file category */}
               {canEdit && (
-                <label className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-dashed text-xs cursor-pointer transition-colors ${uploading ? 'border-tint text-slate-400 cursor-wait' : 'border-tint text-slate-400 hover:border-green hover:text-green'}`}>
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
-                  </svg>
-                  {uploading ? 'Uploading…' : fileCount > 0 ? 'Add new version' : 'Upload a file'}
-                  <input ref={fileInputRef} type="file" className="hidden" disabled={uploading} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(f); }} />
-                </label>
+                addingCategory ? (
+                  <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-dashed border-tint bg-fog/20">
+                    <input
+                      autoFocus
+                      value={newCategoryName}
+                      onChange={(e) => setNewCategoryName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && newCategoryName.trim()) {
+                          const catName = newCategoryName.trim();
+                          setAddingCategory(false);
+                          setNewCategoryName('');
+                          if (fileInputRef.current) { fileInputRef.current.setAttribute('data-cat', catName); fileInputRef.current.click(); }
+                        }
+                        if (e.key === 'Escape') { setAddingCategory(false); setNewCategoryName(''); }
+                      }}
+                      placeholder="Category name, e.g. Bank statements…"
+                      className="flex-1 border border-tint rounded px-2 py-1 text-xs focus:outline-none focus:border-green"
+                    />
+                    <label className={`flex items-center gap-1 text-xs px-3 py-1 rounded border cursor-pointer transition-colors ${newCategoryName.trim() ? 'bg-green text-paper border-green hover:bg-deep' : 'text-slate-400 border-tint cursor-not-allowed'}`}>
+                      {uploadingForCat === newCategoryName.trim() ? 'Uploading…' : 'Choose file'}
+                      <input
+                        type="file"
+                        className="hidden"
+                        disabled={!newCategoryName.trim() || uploadingForCat === newCategoryName.trim()}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          const catName = newCategoryName.trim();
+                          if (f && catName) {
+                            setAddingCategory(false);
+                            setNewCategoryName('');
+                            uploadFileForCategory(f, catName);
+                          }
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+                    <button onClick={() => { setAddingCategory(false); setNewCategoryName(''); }} className="text-xs text-slate-400 hover:text-ink px-2 py-1">Cancel</button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setAddingCategory(true)}
+                    className="w-full flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-dashed border-tint text-xs text-slate-400 hover:text-green hover:border-green transition-colors"
+                  >
+                    <span>+</span>
+                    <span>{categoryNames.length === 0 ? 'Upload a file' : 'Add file category'}</span>
+                  </button>
+                )
               )}
-              {fileCount === 0 && !canEdit && <div className="text-xs text-slate-400">No files attached</div>}
             </div>
           )}
 
-          {/* ── Task-level fields ─────────────────────────────────── */}
-          <div className="grid grid-cols-3 gap-2">
-            <label className="text-xs text-slate-500">
-              Remarks
-              {canEdit
-                ? <EditableText value={it.remarks || ''} onSave={(v) => onChange({ remarks: v })} placeholder="overall task remark…" className="w-full mt-0.5 text-xs" />
-                : <div className="mt-0.5 text-xs text-ink">{it.remarks || '—'}</div>}
-            </label>
+          {/* ── Task metadata grid ────────────────────────────────── */}
+          <div className="grid grid-cols-3 gap-x-4 gap-y-3 pt-1">
             <div className="text-xs text-slate-500">
               Who provides this
               <div className="mt-1 flex rounded border border-tint overflow-hidden text-[11px] w-fit">
@@ -360,25 +437,32 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
                 </>
               )}
             </div>
-          </div>
-
-          {/* ── Ad-hoc secondary assignee ───────────────────────── */}
-          {canEdit && (
             <div className="text-xs text-slate-500">
               Secondary assignee
-              <div className="text-[10px] text-slate-400 mb-1">Ad-hoc cover when primary is unavailable</div>
-              <select
-                value={it.adHocOwner || ''}
-                onChange={(e) => onChange({ adHocOwner: e.target.value })}
-                className="text-xs border border-tint rounded px-2 py-1 bg-paper focus:outline-none focus:border-green"
-              >
-                <option value="">None</option>
-                {team.map((p) => (
-                  <option key={p.id} value={p.name}>{p.name}</option>
-                ))}
-              </select>
+              {canEdit ? (
+                <select
+                  value={it.adHocOwner || ''}
+                  onChange={(e) => onChange({ adHocOwner: e.target.value })}
+                  className="mt-1 block text-xs border border-tint rounded px-2 py-1 bg-paper focus:outline-none focus:border-green"
+                >
+                  <option value="">None</option>
+                  {team.map((p) => (
+                    <option key={p.id} value={p.name}>{p.name}</option>
+                  ))}
+                </select>
+              ) : (
+                <div className="mt-0.5 text-xs text-ink">{it.adHocOwner || '—'}</div>
+              )}
             </div>
-          )}
+          </div>
+
+          {/* ── Remarks ───────────────────────────────────────────── */}
+          <div className="text-xs text-slate-500">
+            Remarks
+            {canEdit
+              ? <EditableText value={it.remarks || ''} onSave={(v) => onChange({ remarks: v })} placeholder="overall task remark…" className="w-full mt-0.5 text-xs" />
+              : <div className="mt-0.5 text-xs text-ink">{it.remarks || '—'}</div>}
+          </div>
 
           {/* ── Due date ──────────────────────────────────────────── */}
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-500">
@@ -389,7 +473,7 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
           </div>
 
           {/* ── Meta + delete ─────────────────────────────────────── */}
-          <div className="flex items-center gap-4 text-xs text-slate-400">
+          <div className="flex items-center gap-4 text-xs text-slate-400 pt-2 border-t border-tint/40">
             {it.dateRequested && <span>Requested {it.dateRequested}</span>}
             {it.followups > 0 && <span>{it.followups} reminder{it.followups > 1 ? 's' : ''}</span>}
             <span className="flex-1" />
@@ -869,14 +953,22 @@ function FilesModal({ engagementId, files, heads, onClose, onAdd, onMatch, onUnm
   const [q, setQ] = useState('');
   const [uploading, setUploading] = useState(false);
   const [collapsedMatchedHeads, setCollapsedMatchedHeads] = useState({});
+  // Two-step matching: null = pick task, string itemId = pick category within that task
+  const [matchStep, setMatchStep] = useState(null); // null | { itemId, itemLabel }
+  const [categoryInput, setCategoryInput] = useState('');
   const unmatchedKey = unmatched.map((f) => f.id).join(',');
-  useEffect(() => { if (!unmatched.some((f) => f.id === cur)) setCur(unmatched[0]?.id || null); }, [unmatchedKey]);
+  useEffect(() => { if (!unmatched.some((f) => f.id === cur)) { setCur(unmatched[0]?.id || null); setMatchStep(null); } }, [unmatchedKey]);
 
   const itemById = {};
   for (const h of heads) for (const it of h.items) itemById[it.id] = it;
   const ql = q.trim().toLowerCase();
   const targets = heads.flatMap((h) => h.items.filter((it) => it.status !== 'NA' && (!ql || it.p.toLowerCase().includes(ql) || h.sub.toLowerCase().includes(ql))).map((it) => ({ it, h })));
   const curFile = unmatched.find((f) => f.id === cur);
+
+  // Existing categories for the pending task
+  const existingCategoriesForTask = matchStep
+    ? [...new Set(files.filter(f => f.assignedItemId === matchStep.itemId && f.categoryName).map(f => f.categoryName))]
+    : [];
 
   const matchedGroups = (() => {
     const groups = {};
@@ -885,19 +977,31 @@ function FilesModal({ engagementId, files, heads, onClose, onAdd, onMatch, onUnm
       if (!it) continue;
       const h = heads.find(hd => hd.items.some(i => i.id === f.assignedItemId));
       if (!h) continue;
-      if (!groups[h.headId]) groups[h.headId] = { head: h, entries: [] };
-      groups[h.headId].entries.push({ file: f, item: it });
+      const key = `${h.headId}__${it.id}`;
+      if (!groups[key]) groups[key] = { head: h, item: it, entries: [] };
+      groups[key].entries.push(f);
     }
     return Object.values(groups);
   })();
 
-  function openFile(f) {
-    api.documents.open(f.id);
-  }
+  function openFile(f) { api.documents.open(f.id); }
 
   async function handleAdd(fileList) {
     setUploading(true);
     try { await onAdd(fileList); } finally { setUploading(false); }
+  }
+
+  function pickTask(itemId, itemLabel) {
+    setMatchStep({ itemId, itemLabel });
+    setCategoryInput('');
+  }
+
+  function confirmMatch(categoryName) {
+    if (!matchStep || !curFile) return;
+    onMatch(curFile.id, matchStep.itemId, categoryName);
+    setMatchStep(null);
+    setCategoryInput('');
+    setQ('');
   }
 
   return (
@@ -918,7 +1022,7 @@ function FilesModal({ engagementId, files, heads, onClose, onAdd, onMatch, onUnm
           ) : (
             <div className="border border-tint rounded-lg divide-y divide-tint/60 max-h-[50vh] overflow-y-auto">
               {unmatched.map((f) => (
-                <button key={f.id} onClick={() => setCur(f.id)} aria-pressed={cur === f.id} className={`w-full text-left px-3 py-2 border-l-4 ${cur === f.id ? 'bg-fog border-green' : 'border-transparent hover:bg-fog/60'}`}>
+                <button key={f.id} onClick={() => { setCur(f.id); setMatchStep(null); }} aria-pressed={cur === f.id} className={`w-full text-left px-3 py-2 border-l-4 ${cur === f.id ? 'bg-fog border-green' : 'border-transparent hover:bg-fog/60'}`}>
                   <div className="text-sm text-ink truncate" title={f.name}>{f.name}</div>
                   <div className="text-xs text-slate-500 truncate">{fmtSize(f.size)}{f.uploadedAt ? ` · ${f.uploadedAt}` : ''}{f.source === 'whatsapp' ? ' · WhatsApp' : ''}{f.sender ? ` · ${f.sender}` : ''}</div>
                 </button>
@@ -946,24 +1050,70 @@ function FilesModal({ engagementId, files, heads, onClose, onAdd, onMatch, onUnm
             </div>
           )}
         </div>
+
         <div className="md:col-span-3">
-          <div className="text-xs font-medium text-slate-600 mb-1">{curFile ? <>Which task is <span className="text-ink">{curFile.name}</span>?</> : 'Task'}</div>
-          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a task, e.g. bank statement" aria-label="Find a task" disabled={!curFile} className="w-full mb-2 text-sm border border-tint rounded-md px-3 py-1.5 bg-paper focus:outline-none focus:border-green disabled:opacity-50" />
-          {!curFile ? <p className="text-xs text-slate-400 py-6 text-center">Add or pick a file first.</p>
-            : targets.length === 0 ? <p className="text-xs text-slate-400 py-6 text-center">No document task matches{ql ? ` "${q}"` : ''}.</p>
-            : (
-              <div className="border border-tint rounded-lg divide-y divide-tint/60 max-h-[50vh] overflow-y-auto">
-                {targets.slice(0, 120).map(({ it, h }) => (
-                  <button key={it.id} onClick={() => { onMatch(curFile.id, it.id); setQ(''); }} className="w-full flex items-center gap-3 px-3 py-2 hover:bg-fog text-left">
-                    <span className="flex-1 min-w-0">
-                      <span className="block text-sm text-ink truncate">{it.p}</span>
-                      <span className="block text-xs text-slate-400 truncate">{h.sub}</span>
-                    </span>
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full border shrink-0 ${statusStyle(it)}`}>{statusLabel(it)}</span>
-                  </button>
-                ))}
+          {!matchStep ? (
+            <>
+              <div className="text-xs font-medium text-slate-600 mb-1">{curFile ? <>Which task is <span className="text-ink">{curFile.name}</span>?</> : 'Task'}</div>
+              <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a task, e.g. bank statement" aria-label="Find a task" disabled={!curFile} className="w-full mb-2 text-sm border border-tint rounded-md px-3 py-1.5 bg-paper focus:outline-none focus:border-green disabled:opacity-50" />
+              {!curFile ? <p className="text-xs text-slate-400 py-6 text-center">Add or pick a file first.</p>
+                : targets.length === 0 ? <p className="text-xs text-slate-400 py-6 text-center">No document task matches{ql ? ` "${q}"` : ''}.</p>
+                : (
+                  <div className="border border-tint rounded-lg divide-y divide-tint/60 max-h-[50vh] overflow-y-auto">
+                    {targets.slice(0, 120).map(({ it, h }) => (
+                      <button key={it.id} onClick={() => pickTask(it.id, it.p)} className="w-full flex items-center gap-3 px-3 py-2 hover:bg-fog text-left">
+                        <span className="flex-1 min-w-0">
+                          <span className="block text-sm text-ink truncate">{it.p}</span>
+                          <span className="block text-xs text-slate-400 truncate">{h.sub}</span>
+                        </span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full border shrink-0 ${statusStyle(it)}`}>{statusLabel(it)}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+            </>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 mb-3">
+                <button onClick={() => setMatchStep(null)} className="text-[10px] text-slate-400 hover:text-green">← Back</button>
+                <div className="text-xs font-medium text-slate-600 truncate flex-1">File category within <span className="text-ink">{matchStep.itemLabel}</span></div>
               </div>
-            )}
+              <p className="text-[11px] text-slate-400 mb-3">Choose an existing category to add a new version, or name a new category.</p>
+
+              {existingCategoriesForTask.length > 0 && (
+                <div className="mb-3 space-y-1">
+                  <div className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mb-1.5">Existing categories</div>
+                  {existingCategoriesForTask.map((cat) => (
+                    <button
+                      key={cat}
+                      onClick={() => confirmMatch(cat)}
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-tint hover:border-green hover:bg-fog text-left transition-colors"
+                    >
+                      <svg className="shrink-0 text-slate-400" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                      </svg>
+                      <span className="text-sm text-ink flex-1 truncate">{cat}</span>
+                      <span className="text-[10px] text-slate-400 shrink-0">Add new version</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div className="text-[10px] text-slate-500 font-medium uppercase tracking-wide mb-1.5">New category</div>
+              <div className="flex gap-2">
+                <input
+                  autoFocus
+                  value={categoryInput}
+                  onChange={(e) => setCategoryInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && categoryInput.trim()) confirmMatch(categoryInput.trim()); }}
+                  placeholder="e.g. Bank statements, Trial balance…"
+                  className="flex-1 border border-tint rounded px-3 py-1.5 text-sm bg-paper focus:outline-none focus:border-green"
+                />
+                <Btn onClick={() => confirmMatch(categoryInput.trim())} disabled={!categoryInput.trim()}>Match</Btn>
+              </div>
+              <button onClick={() => confirmMatch('')} className="mt-2 text-xs text-slate-400 hover:text-slate-600">Skip category — just match to task</button>
+            </>
+          )}
         </div>
       </div>
 
@@ -973,26 +1123,49 @@ function FilesModal({ engagementId, files, heads, onClose, onAdd, onMatch, onUnm
             Matched documents <span className="font-mono text-slate-400">{matched.length}</span>
           </div>
           <div className="space-y-1">
-            {matchedGroups.map(({ head, entries }) => {
-              const isCollapsed = collapsedMatchedHeads[head.headId] !== false;
+            {matchedGroups.map(({ head, item: taskItem, entries }) => {
+              const key = `${head.headId}__${taskItem.id}`;
+              const isCollapsed = collapsedMatchedHeads[key] !== false;
+              // Group entries by category
+              const catGroups = {};
+              for (const f of entries) {
+                const cat = f.categoryName || '';
+                if (!catGroups[cat]) catGroups[cat] = [];
+                catGroups[cat].push(f);
+              }
               return (
-                <div key={head.headId} className="border border-tint rounded-lg overflow-hidden">
+                <div key={key} className="border border-tint rounded-lg overflow-hidden">
                   <button
-                    onClick={() => setCollapsedMatchedHeads(p => ({ ...p, [head.headId]: !isCollapsed }))}
+                    onClick={() => setCollapsedMatchedHeads(p => ({ ...p, [key]: !isCollapsed }))}
                     className="w-full flex items-center gap-2 px-3 py-2 bg-fog/40 hover:bg-fog text-left transition-colors"
                   >
                     <span className={`text-[10px] text-slate-400 transition-transform duration-150 ${isCollapsed ? '-rotate-90' : ''}`}>▾</span>
-                    <span className="text-xs font-medium text-ink flex-1 min-w-0 truncate">{head.sub}</span>
+                    <span className="text-xs font-medium text-ink flex-1 min-w-0 truncate">{taskItem.p}</span>
+                    <span className="text-[10px] text-slate-400 shrink-0 mr-1">{head.sub}</span>
                     <span className="text-[10px] text-slate-400 shrink-0">{entries.length} file{entries.length !== 1 ? 's' : ''}</span>
                   </button>
                   {!isCollapsed && (
-                    <div className="divide-y divide-tint/60 border-t border-tint">
-                      {entries.map(({ file: f, item: it }) => (
-                        <div key={f.id} className="px-3 py-2 flex items-center gap-3">
-                          <button onClick={() => openFile(f)} className="text-sm text-ink hover:text-green hover:underline underline-offset-2 truncate flex-1 text-left min-w-0" title={f.name}>{f.name}</button>
-                          <span className="text-xs text-slate-400 truncate max-w-[180px] shrink-0" title={it.p}>{it.p}</span>
-                          <button onClick={() => onUnmatch(f.id)} className="text-xs text-slate-400 hover:text-ink shrink-0">Unmatch</button>
-                          {canDelete && <button onClick={() => { if (confirm('Delete this file?')) onRemove(f.id); }} className="text-xs text-slate-400 hover:text-deep shrink-0">Delete</button>}
+                    <div className="border-t border-tint">
+                      {Object.entries(catGroups).map(([cat, catFiles]) => (
+                        <div key={cat || '__none'}>
+                          {cat && (
+                            <div className="px-3 py-1 bg-fog/20 border-b border-tint/40 flex items-center gap-1.5">
+                              <svg className="shrink-0 text-slate-400" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                              </svg>
+                              <span className="text-[11px] text-slate-500 font-medium">{cat}</span>
+                            </div>
+                          )}
+                          <div className="divide-y divide-tint/60">
+                            {catFiles.map((f, idx) => (
+                              <div key={f.id} className="px-3 py-2 flex items-center gap-3">
+                                <span className="text-[10px] text-slate-400 shrink-0 w-6 tabular-nums">v{idx + 1}</span>
+                                <button onClick={() => openFile(f)} className="text-sm text-ink hover:text-green hover:underline underline-offset-2 truncate flex-1 text-left min-w-0" title={f.name}>{f.name}</button>
+                                <button onClick={() => onUnmatch(f.id)} className="text-xs text-slate-400 hover:text-ink shrink-0">Unmatch</button>
+                                {canDelete && <button onClick={() => { if (confirm('Delete this file?')) onRemove(f.id); }} className="text-xs text-slate-400 hover:text-deep shrink-0">Delete</button>}
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1138,9 +1311,9 @@ export default function EngagementDetail() {
     }
   }
 
-  async function matchFile(fileId, itemId) {
+  async function matchFile(fileId, itemId, categoryName) {
     try {
-      await api.inbox.assign(fileId, itemId);
+      await api.inbox.assign(fileId, itemId, categoryName || '');
       const it = items.find((x) => x.id === itemId);
       if (it && it.status !== 'Completed' && it.status !== 'NA') {
         await api.items.update(itemId, { status: 'Under Review', queried: false });

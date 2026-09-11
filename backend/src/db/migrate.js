@@ -115,6 +115,9 @@ export async function runMigrations() {
   // Add per-file note column to inbox_files
   await pool.query(`ALTER TABLE inbox_files ADD COLUMN IF NOT EXISTS note TEXT NOT NULL DEFAULT ''`);
 
+  // Add file category name for version grouping within a task
+  await pool.query(`ALTER TABLE inbox_files ADD COLUMN IF NOT EXISTS category_name TEXT NOT NULL DEFAULT ''`);
+
   // Add ad-hoc (secondary) assignee to items
   await pool.query(`ALTER TABLE items ADD COLUMN IF NOT EXISTS ad_hoc_owner TEXT NOT NULL DEFAULT ''`);
 

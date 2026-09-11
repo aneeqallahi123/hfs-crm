@@ -88,7 +88,7 @@ export const api = {
   },
   inbox: {
     list: (engagementId) => request('GET', engagementId ? `/inbox?engagementId=${engagementId}` : '/inbox').then(r => r?.files ?? r),
-    assign: (fileId, itemId) => request('PATCH', `/inbox/${fileId}/assign`, { itemId }),
+    assign: (fileId, itemId, categoryName) => request('PATCH', `/inbox/${fileId}/assign`, { itemId, categoryName }),
     unassign: (fileId) => request('PATCH', `/inbox/${fileId}/assign`, { itemId: null }),
     updateNote: (fileId, note) => request('PATCH', `/inbox/${fileId}/note`, { note }),
     markIrrelevant: (fileId, irrelevant) => request('PATCH', `/inbox/${fileId}/irrelevant`, { irrelevant }),
