@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
@@ -1309,7 +1309,9 @@ export default function EngagementDetail() {
   const { id } = useParams();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const toast = useToast();
+  const fromTasks = location.state?.from === 'tasks';
   const [engagement, setEngagement] = useState(null);
   const [client, setClient] = useState(null);
   const [items, setItems] = useState([]);
@@ -1563,7 +1565,7 @@ export default function EngagementDetail() {
   return (
     <div className="stagger p-8 max-w-4xl">
       <div className="mb-3 flex items-center justify-between">
-        <button onClick={() => navigate('/')} className="text-xs text-slate-400 hover:text-slate-600">Back to overview</button>
+        <button onClick={() => navigate(fromTasks ? '/tasks' : '/')} className="text-xs text-slate-400 hover:text-slate-600">{fromTasks ? 'Back to tasks' : 'Back to overview'}</button>
         {user?.role === 'partner' && (
           <button onClick={removeYear} className="text-xs text-slate-400 hover:text-deep" title="Delete this year for this client.">Remove this year</button>
         )}
