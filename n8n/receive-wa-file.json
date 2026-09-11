@@ -51,11 +51,11 @@
     },
     {
       "parameters": {
-        "url": "={{ $env.CRM_BACKEND_URL }}/api/webhooks/inbound-file",
+        "url": "REPLACE_WITH_CRM_BACKEND_URL/api/webhooks/inbound-file",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "x-webhook-secret", "value": "={{ $env.WEBHOOK_SECRET }}" },
+            { "name": "x-webhook-secret", "value": "REPLACE_WITH_WEBHOOK_SECRET" },
             { "name": "Content-Type", "value": "application/json" }
           ]
         },
@@ -102,7 +102,7 @@
   "_meta": {
     "templateCredsSetupCompleted": false,
     "notes": [
-      "Required env vars in n8n: CRM_BACKEND_URL (e.g. https://your-crm.railway.app), WEBHOOK_SECRET",
+      "n8n Community Edition does not allow $env access inside node expressions — after importing, manually replace the 'POST to CRM Webhook' node's URL (REPLACE_WITH_CRM_BACKEND_URL/api/webhooks/inbound-file) and x-webhook-secret header value (REPLACE_WITH_WEBHOOK_SECRET) with the real production values. Never commit those real values back into this file.",
       "In Evolution API: set this workflow's webhook URL for event MESSAGES_UPSERT on your instance",
       "Requires S3 storage enabled on Evolution API: it then decrypts inbound media itself and adds 'base64' (and a presigned 'mediaUrl') directly onto the message object in the webhook payload, so no separate getBase64FromMediaMessage call is needed here.",
       "Evolution API delivers ALL group messages from ALL monitored groups — the CRM resolves the right engagement by groupId",
