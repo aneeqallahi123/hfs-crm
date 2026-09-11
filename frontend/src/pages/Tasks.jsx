@@ -93,6 +93,120 @@ function FilterDropdown({ label, value, options, onChange }) {
   );
 }
 
+function StudentTasksView({ user, clients, engagements, itemsByEng, loading }) {
+  const navigate = useNavigate();
+  const [expandedFirms, setExpandedFirms] = useState({});
+
+  if (loading) return (
+    <div className="p-8 max-w-5xl">
+      <div className="animate-pulse space-y-4">
+        <div className="h-8 bg-fog rounded w-32" />
+        <div className="h-12 bg-fog rounded-xl" />
+        <div className="h-64 bg-fog rounded-xl" />
+      </div>
+    </div>
+  );
+
+  // Build firms → assigned engagement years
+  const userName = user?.name || '';
+  const firmMap = {};
+  for (const e of engagements) {
+    const items = itemsByEng[e.id] || [];
+    const myItems = items.filter((it) => it.headIncluded && it.status !== 'Completed' && it.status !== 'NA' &&
+      (it.owner === userName || (!it.owner && e.incharge === userName)));
+    if (myItems.length === 0) continue;
+    const client = clients.find((c) => c.id === e.clientId);
+    if (!client) continue;
+    if (!firmMap[client.id]) firmMap[client.id] = { client, years: [] };
+    firmMap[client.id].years.push({ e, myItems });
+  }
+  const firms = Object.values(firmMap).sort((a, b) => a.client.name.localeCompare(b.client.name));
+  firms.forEach((f) => f.years.sort((a, b) => b.e.year - a.e.year));
+
+  const totalOpen = firms.reduce((s, f) => s + f.years.reduce((ss, y) => ss + y.myItems.length, 0), 0);
+
+  return (
+    <div className="stagger p-8 max-w-5xl">
+      <header className="mb-6 flex items-center gap-4">
+        <div>
+          <h1 className="font-serif text-[32px] leading-[1.15] font-medium text-ink tracking-[-0.01em]">Tasks</h1>
+          <div className="mt-2 h-px w-10 bg-green" />
+        </div>
+        <div className="flex flex-col items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-deep to-green text-paper shadow-sm">
+          <span className="text-xl font-bold tabular-nums leading-none">{totalOpen}</span>
+          <span className="text-[9px] font-medium uppercase tracking-wide opacity-80 mt-0.5">open</span>
+        </div>
+      </header>
+
+      {firms.length === 0 ? (
+        <div className="text-center py-16 text-slate-400">
+          <svg className="w-10 h-10 mx-auto mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+          </svg>
+          <p className="text-sm">No tasks assigned to you.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {firms.map(({ client, years }) => {
+            const isOpen = !!expandedFirms[client.id];
+            const firmTotal = years.reduce((s, y) => s + y.myItems.length, 0);
+            return (
+              <section key={client.id} className="bg-paper border border-tint rounded-xl overflow-hidden shadow-sm">
+                <button
+                  className="w-full px-4 py-3 flex items-center gap-3 hover:bg-fog/50 transition-colors text-left"
+                  onClick={() => setExpandedFirms((p) => ({ ...p, [client.id]: !p[client.id] }))}
+                >
+                  <span className="w-8 h-8 rounded-full bg-gradient-to-br from-deep/20 to-green/20 border border-tint flex items-center justify-center shrink-0">
+                    <svg className="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                    </svg>
+                  </span>
+                  <span className="text-sm font-medium text-ink flex-1">{client.name}</span>
+                  <span className="font-mono text-[11px] px-1.5 py-0.5 rounded-md bg-fog border border-tint text-slate-500 tabular-nums">{firmTotal}</span>
+                  <svg className={`w-4 h-4 text-slate-400 transition-transform shrink-0 ${isOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+
+                {isOpen && (
+                  <div className="border-t border-tint divide-y divide-tint/60">
+                    {years.map(({ e, myItems }) => {
+                      const stages = myItems.reduce((acc, it) => { const s = stageOf(it); acc[s] = (acc[s] || 0) + 1; return acc; }, {});
+                      return (
+                        <button
+                          key={e.id}
+                          className="w-full px-5 py-3 flex items-center gap-3 hover:bg-fog/40 transition-colors text-left"
+                          onClick={() => navigate(`/engagements/${e.id}`)}
+                        >
+                          <svg className="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                          <span className="text-sm font-medium text-ink flex-1">FY {e.year}</span>
+                          <div className="flex items-center gap-2 text-[11px]">
+                            {stages.request > 0 && <span className="px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-600 border border-blue-100 font-medium">{stages.request} to request</span>}
+                            {stages.awaited > 0 && <span className="px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-600 border border-amber-100 font-medium">{stages.awaited} awaited</span>}
+                            {stages.review > 0 && <span className="px-1.5 py-0.5 rounded-md bg-green/10 text-green border border-green/20 font-medium">{stages.review} to review</span>}
+                            {stages.internal > 0 && <span className="px-1.5 py-0.5 rounded-md bg-fog text-slate-500 border border-tint font-medium">{stages.internal} not started</span>}
+                            {stages.adhoc > 0 && <span className="px-1.5 py-0.5 rounded-md bg-purple-50 text-purple-600 border border-purple-100 font-medium">{stages.adhoc} ad-hoc</span>}
+                          </div>
+                          <span className="font-mono text-[11px] px-1.5 py-0.5 rounded-md bg-fog border border-tint text-slate-500 tabular-nums">{myItems.length}</span>
+                          <svg className="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Tasks() {
   const { user } = useAuth();
   const toast = useToast();
@@ -235,6 +349,16 @@ export default function Tasks() {
     { value: 'all', label: 'All statuses' },
     ...STAGES.map(([k, l]) => ({ value: k, label: l, count: nStage(k) })),
   ];
+
+  if (isStudent) return (
+    <StudentTasksView
+      user={user}
+      clients={clients}
+      engagements={engagements}
+      itemsByEng={itemsByEng}
+      loading={loading}
+    />
+  );
 
   if (loading) return (
     <div className="p-8 max-w-5xl">
