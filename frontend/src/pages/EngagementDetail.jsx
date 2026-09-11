@@ -236,7 +236,7 @@ function ContextDocSection({ it, canEdit, onUpdate }) {
 }
 
 // ---- Item row ----
-function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, selected, onToggleSel, onRemove, itemFiles = [], onFileUploaded, onFileRemoved }) {
+function ItemRow({ it, team, canEdit, isStudent, onChange, engagementId, selectMode, selected, onToggleSel, onRemove, itemFiles = [], onFileUploaded, onFileRemoved }) {
   const [open, setOpen] = useState(false);
   const toast = useToast();
   const [downloading, setDownloading] = useState(null);
@@ -367,11 +367,11 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
             +{it.adHocOwner.split(' ')[0]}
           </span>
         )}
-        {canEdit
+        {!isStudent && (canEdit
           ? <OwnerSelect value={it.owner} team={team} onChange={(v) => onChange({ owner: v })} />
           : it.owner
             ? <span className="text-[10px] text-slate-500 bg-fog px-2 py-0.5 rounded shrink-0 max-w-[6rem] truncate" title={it.owner}>{it.owner.split(' ')[0]}</span>
-            : null}
+            : null)}
         {canEdit ? <StatusSelect it={it} onChange={(v) => onChange(withStatus(it, v))} /> : (
           <span className={`text-[11px] rounded-full border px-2.5 py-0.5 shrink-0 ${statusStyle(it)}`}>{statusLabel(it)}</span>
         )}
@@ -523,7 +523,7 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
           )}
 
           {/* ── Task metadata grid ────────────────────────────────── */}
-          <div className="grid grid-cols-3 gap-x-4 gap-y-3 pt-1">
+          {!isStudent && <div className="grid grid-cols-3 gap-x-4 gap-y-3 pt-1">
             <div className="text-xs text-slate-500">
               Who provides this
               <div className="mt-1 flex rounded border border-tint overflow-hidden text-[11px] w-fit">
@@ -578,7 +578,7 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
                 <div className="mt-0.5 text-xs text-ink">{it.adHocOwner || '—'}</div>
               )}
             </div>
-          </div>
+          </div>}
 
           {/* ── Remarks ───────────────────────────────────────────── */}
           <div className="text-xs text-slate-500">
@@ -1331,6 +1331,7 @@ export default function EngagementDetail() {
 
   const canEdit = user?.role === 'partner' || user?.role === 'manager' || (user?.role === 'student' && engagement?.incharge === user?.name);
   const isPartnerManager = user?.role === 'partner' || user?.role === 'manager';
+  const isStudent = user?.role === 'student';
   const canDeleteFiles = isPartnerManager;
   const td = today();
 
@@ -1630,9 +1631,9 @@ export default function EngagementDetail() {
         })}
         {/* Unmatched files KPI card */}
         <button
-          onClick={() => setFilesOpen(true)}
-          title="Files received but not yet matched to a task"
-          className={`text-left px-3 py-3 transition-colors hover:bg-paper/60 ${unmatchedCount === 0 ? 'opacity-50' : ''}`}
+          onClick={() => !isStudent && setFilesOpen(true)}
+          title={isStudent ? 'Unmatched files' : 'Files received but not yet matched to a task'}
+          className={`text-left px-3 py-3 transition-colors ${!isStudent ? 'hover:bg-paper/60' : 'cursor-default'} ${unmatchedCount === 0 ? 'opacity-50' : ''}`}
         >
           <div className={`font-serif text-[24px] leading-none font-medium tabular-nums ${unmatchedCount > 0 ? 'text-deep' : 'text-ink'}`}>{unmatchedCount}</div>
           <div className="text-[11px] text-slate-600 mt-1 leading-tight">Unmatched</div>
@@ -1768,7 +1769,7 @@ export default function EngagementDetail() {
                 <div className="divide-y divide-tint/60 border-t border-tint">
                   {h.items.map((it) => (
                     <ItemRow
-                      key={it.id} it={it} team={team} canEdit={canEdit} engagementId={id}
+                      key={it.id} it={it} team={team} canEdit={canEdit} isStudent={isStudent} engagementId={id}
                       selectMode={selecting} selected={!!sel[it.id]} onToggleSel={() => setSel((s) => ({ ...s, [it.id]: !s[it.id] }))}
                       onChange={(patch) => updateItem(it.id, patch)}
                       onRemove={canEdit && isAdhoc(it) ? () => { if (confirm(`Delete "${it.p}"? The Activity log keeps a trace.`)) removeItem(it.id); } : null}
