@@ -268,14 +268,6 @@ export default function Library() {
             )}
           </div>
         </div>
-        <p className="text-sm text-slate-500 mt-3 max-w-2xl">
-          The master checklist for every audit engagement — organised by category and sub-category.
-          Each item is marked as either{' '}
-          <span className="text-green font-medium">Client</span> (submitted by the client) or{' '}
-          <span className="text-deep font-medium">Team work</span> (completed by our team),
-          and classified by type: Document, Number, or Information.
-          Updates here apply to all new engagements and roll-forwards.
-        </p>
         {editMode && (
           <p className="text-xs text-amber-600 mt-2 bg-amber-50 border border-amber-200 rounded-md px-3 py-1.5 inline-block">
             Editing mode active — changes apply to all new engagements and roll-forwards.
