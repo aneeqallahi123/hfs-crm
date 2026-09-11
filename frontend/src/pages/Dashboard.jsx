@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -425,6 +426,78 @@ function daysBetweenSafe(a, b) {
   return Math.round((new Date(b) - new Date(a)) / 86400000);
 }
 
+// ---- Shared dropdown used in student view ----
+function FilterDropdown({ label, value, options, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState({ top: 0, left: 0 });
+  const btnRef = useRef(null);
+  const panelRef = useRef(null);
+
+  const reposition = useCallback(() => {
+    if (!btnRef.current) return;
+    const r = btnRef.current.getBoundingClientRect();
+    setCoords({ top: r.bottom + 6, left: r.left });
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    reposition();
+    function onScroll() { reposition(); }
+    function onKey(e) { if (e.key === 'Escape') setOpen(false); }
+    function onMouse(e) {
+      const inBtn = btnRef.current && btnRef.current.contains(e.target);
+      const inPanel = panelRef.current && panelRef.current.contains(e.target);
+      if (!inBtn && !inPanel) setOpen(false);
+    }
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onMouse);
+    return () => {
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onMouse);
+    };
+  }, [open, reposition]);
+
+  const selected = options.find((o) => o.value === value);
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        onClick={() => setOpen(!open)}
+        className={`flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border transition-colors ${
+          value !== 'all' ? 'bg-deep text-paper border-deep' : 'bg-paper text-ink border-tint hover:bg-fog'
+        }`}
+      >
+        <span>{label}{value !== 'all' && selected ? `: ${selected.label}` : ''}</span>
+        <svg className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && createPortal(
+        <div
+          ref={panelRef}
+          style={{ position: 'fixed', top: coords.top, left: coords.left, zIndex: 9999 }}
+          className="bg-paper border border-tint rounded-xl shadow-xl py-1 min-w-[180px]"
+        >
+          {options.map((o) => (
+            <button
+              key={o.value}
+              onClick={() => { onChange(o.value); setOpen(false); }}
+              className={`w-full text-left px-3 py-1.5 text-sm flex items-center justify-between gap-4 hover:bg-fog ${value === o.value ? 'text-deep font-medium' : 'text-ink'}`}
+            >
+              <span>{o.label}</span>
+              {o.count != null && <span className="font-mono text-xs text-slate-400">{o.count}</span>}
+            </button>
+          ))}
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
+
 // ---- Student view ----
 function StudentDashboardBody({ rows, toast, reload }) {
   const { user } = useAuth();
@@ -471,17 +544,17 @@ function StudentDashboardBody({ rows, toast, reload }) {
   });
 
   const FILTERS = [
-    ['all', 'All tasks', totalOpen],
-    ['internal', 'Not started', stageCount.internal || 0],
-    ['request', 'To request', stageCount.request || 0],
-    ['awaited', 'Awaited', stageCount.awaited || 0],
-    ['adhoc', 'Ad-hoc', stageCount.adhoc || 0],
-    ['completed', 'Completed', doneMine],
+    { value: 'all', label: 'All tasks', count: totalOpen },
+    { value: 'internal', label: 'Not started', count: stageCount.internal || 0 },
+    { value: 'request', label: 'To request', count: stageCount.request || 0 },
+    { value: 'awaited', label: 'Awaited', count: stageCount.awaited || 0 },
+    { value: 'adhoc', label: 'Ad-hoc', count: stageCount.adhoc || 0 },
+    { value: 'completed', label: 'Completed', count: doneMine },
   ];
   const filtered = filter === 'all'
     ? myRows
     : filter === 'completed'
-      ? [] // completed rows not in myRows; shown separately below
+      ? []
       : myRows.filter((r) => r.stage === filter);
 
   const greeting = (() => {
@@ -493,8 +566,6 @@ function StudentDashboardBody({ rows, toast, reload }) {
   function toggleClient(cid) {
     setExpandedClients((prev) => ({ ...prev, [cid]: !prev[cid] }));
   }
-
-  const currentFilterLabel = FILTERS.find(([k]) => k === filter)?.[1] ?? 'All tasks';
 
   return (
     <div className="stagger p-8 max-w-5xl">
@@ -567,20 +638,7 @@ function StudentDashboardBody({ rows, toast, reload }) {
           <section>
             <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
               <h2 className="font-serif text-lg font-medium text-ink">My tasks</h2>
-              <div className="relative">
-                <select
-                  value={filter}
-                  onChange={(e) => setFilter(e.target.value)}
-                  className="text-sm pl-3 pr-8 py-1.5 rounded-lg border border-tint bg-paper text-ink focus:outline-none focus:border-green appearance-none cursor-pointer"
-                >
-                  {FILTERS.map(([k, l, n]) => (
-                    <option key={k} value={k}>{l} ({n})</option>
-                  ))}
-                </select>
-                <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </div>
+              <FilterDropdown label="Filter" value={filter} options={FILTERS} onChange={setFilter} />
             </div>
             {filter === 'completed' ? (
               <p className="text-sm text-slate-400 py-6 px-1">{doneMine} completed task{doneMine === 1 ? '' : 's'} — well done.</p>
