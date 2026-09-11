@@ -78,7 +78,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json) }}",
         "options": {
-          "timeout": 15000
+          "timeout": 30000
         },
         "sendHeaders": true,
         "headerParameters": {
@@ -97,7 +97,10 @@
         1050,
         100
       ],
-      "notes": "Points at the hfs-crm-staging Railway service (tracks branch claude/happy-ramanujan-6xgc5d). URL is pinned rather than $env because CRM_BACKEND_URL points at production. Secret still comes from $env.WEBHOOK_SECRET. Test from a WhatsApp group with NO wa_group_id mapping so rows land in unmatched_inbox and never touch a real engagement's inbox."
+      "notes": "Points at the hfs-crm-staging Railway service (tracks branch claude/happy-ramanujan-6xgc5d). URL is pinned rather than $env because CRM_BACKEND_URL points at production. Secret still comes from $env.WEBHOOK_SECRET. Test from a WhatsApp group with NO wa_group_id mapping so rows land in unmatched_inbox and never touch a real engagement's inbox. Retry: the backend waits up to MEDIA_WAIT_MS for a still-uploading object and returns 409 if it never lands; this node retries 3x/5s on top, so a slow large-file upload is picked up instead of dropped. The CRM dedups by messageId, so retries are safe.",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {

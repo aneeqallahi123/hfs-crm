@@ -20,6 +20,37 @@ const MAX_FILE_BYTES = parseInt(process.env.MAX_INBOX_FILE_MB || '200', 10) * 10
 // come through the mediaUrl path instead, where the bytes never leave the Mini PC.
 const LEGACY_BASE64_MAX_BYTES = parseInt(process.env.MAX_INBOX_BASE64_MB || '15', 10) * 1024 * 1024;
 
+// Evolution fires MESSAGES_UPSERT as soon as the message arrives, which can be BEFORE it has
+// finished decrypting the media and writing it to MinIO. So a first-attempt miss is normal and
+// means "not yet", not "never" — we wait for it rather than dropping the file. The window widens
+// with file size, which is exactly when dropping would hurt most.
+const MEDIA_WAIT_MS = parseInt(process.env.MEDIA_WAIT_MS || '10000', 10);
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function isNotFound(err) {
+  return err?.code === 'NotFound' || err?.code === 'NoSuchKey' || err?.statusCode === 404;
+}
+
+// Poll for the object until it appears or the budget runs out. Anything that is not a
+// "missing object" error (bad credentials, MinIO unreachable) fails immediately — retrying
+// those just burns the n8n request timeout and hides the real cause.
+async function statWithWait(key, budgetMs = MEDIA_WAIT_MS) {
+  const deadline = Date.now() + budgetMs;
+  let delay = 400;
+
+  for (;;) {
+    try {
+      return await statFile(key);
+    } catch (err) {
+      if (!isNotFound(err)) throw err;
+      if (Date.now() + delay >= deadline) throw err;
+      await sleep(delay);
+      delay = Math.min(delay * 2, 2000);
+    }
+  }
+}
+
 // Evolution API (S3_ENABLED) writes received media straight to MinIO and reports it as a
 // URL shaped like {endpoint}/{bucket}/{key}, sometimes with presign query params. We only
 // want the object key — the URL's host is the Mini PC's internal address and is not
@@ -106,11 +137,22 @@ router.post('/inbound-file', webhookAuth, async (req, res) => {
       // n8n as one, not be recorded as a row pointing at nothing.
       let stat;
       try {
-        stat = await statFile(minioKey);
+        stat = await statWithWait(minioKey);
       } catch (err) {
         console.error(`Inbound file: MinIO stat failed for key "${minioKey}":`, err.message);
-        return res.status(404).json({
-          error: `Media not found in MinIO at key "${minioKey}" — check that Evolution's S3_BUCKET matches MINIO_BUCKET (${BUCKET})`,
+
+        if (!isNotFound(err)) {
+          // Credentials, connectivity, bucket policy — not a timing problem.
+          return res.status(502).json({
+            error: `MinIO error while looking up "${minioKey}": ${err.message}`,
+          });
+        }
+
+        // Still absent after waiting. Signal retryable so n8n's retry can pick it up once
+        // a slow upload lands, rather than losing the file.
+        return res.status(409).json({
+          error: `Media not yet in MinIO at key "${minioKey}" after ${MEDIA_WAIT_MS}ms — Evolution may still be uploading, or its S3_BUCKET may not match MINIO_BUCKET (${BUCKET})`,
+          retryable: true,
         });
       }
 
