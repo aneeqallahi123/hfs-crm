@@ -75,9 +75,7 @@ export default function Sidebar() {
   function load() {
     if (!user) return;
     api.clients.list().then((c) => setClients(Array.isArray(c) ? c : [])).catch(() => {});
-    if (user.role !== 'student') {
-      api.engagements.list().then((e) => setEngagements(Array.isArray(e) ? e : [])).catch(() => {});
-    }
+    api.engagements.list().then((e) => setEngagements(Array.isArray(e) ? e : [])).catch(() => {});
   }
 
   useEffect(() => { load(); }, [user]);
@@ -107,7 +105,12 @@ export default function Sidebar() {
     )}] : []),
   ];
 
-  const filtered = clients.filter((c) => !q || c.name.toLowerCase().includes(q.toLowerCase()));
+  const assignedClientIds = isStudent
+    ? new Set(engagements.filter((e) => e.incharge === user?.name).map((e) => e.clientId))
+    : null;
+  const filtered = clients
+    .filter((c) => !isStudent || assignedClientIds.has(c.id))
+    .filter((c) => !q || c.name.toLowerCase().includes(q.toLowerCase()));
 
   function isActive(path) {
     return path === '/' ? location.pathname === '/' : location.pathname.startsWith(path);
