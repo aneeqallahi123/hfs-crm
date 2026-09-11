@@ -14,11 +14,12 @@ import {
   statusLabel, statusStyle, sectionLabel,
 } from '../lib/metrics.js';
 
+// KPI stages in desired display order
 const STAGES = [
+  ['internal', 'Not started', 'Team work not yet begun'],
   ['request', 'To request', 'Not yet asked of the client'],
   ['awaited', 'Awaited', 'Asked; waiting on the client'],
   ['review', 'To review', 'Received; needs a check'],
-  ['internal', 'Not started', 'Team work not yet begun'],
   ['complete', 'Complete', 'Signed off'],
 ];
 
@@ -31,13 +32,12 @@ function stageOf(it) {
   return 'internal';
 }
 
-// ---- Per-file row (inside expanded ItemRow) ----
-function FileRow({ file, canEdit, downloading, removing, onOpen, onRemove, onNoteChange }) {
+// ---- Per-file row (inside expanded ItemRow) — shown as a version ----
+function FileRow({ file, versionNum, canEdit, downloading, removing, onOpen, onRemove, onNoteChange }) {
   const [note, setNote] = useState(file.note || '');
   const [savingNote, setSavingNote] = useState(false);
   const dirty = note !== (file.note || '');
 
-  // keep in sync if parent refreshes
   React.useEffect(() => { setNote(file.note || ''); }, [file.note]);
 
   async function saveNote() {
@@ -48,7 +48,6 @@ function FileRow({ file, canEdit, downloading, removing, onOpen, onRemove, onNot
     finally { setSavingNote(false); }
   }
 
-  // source: 'whatsapp' → came from client; anything else → uploaded internally
   const fromClient = file.source === 'whatsapp';
 
   function fmtDate(iso) {
@@ -58,8 +57,8 @@ function FileRow({ file, canEdit, downloading, removing, onOpen, onRemove, onNot
 
   return (
     <div className="group/file rounded border border-tint bg-paper hover:border-slate-300 transition-colors overflow-hidden">
-      {/* Top row: icon + name + source + date + remove */}
       <div className="flex items-center gap-2 px-2.5 py-2">
+        <span className="text-[10px] font-medium text-slate-400 shrink-0 w-12">v{versionNum}</span>
         <svg className="shrink-0 text-slate-400" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
         </svg>
@@ -71,7 +70,6 @@ function FileRow({ file, canEdit, downloading, removing, onOpen, onRemove, onNot
         >
           {downloading ? 'Opening…' : file.name}
         </button>
-        {/* Source badge */}
         <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 font-medium ${fromClient ? 'bg-green/10 text-green' : 'bg-slate-100 text-slate-500'}`}>
           {fromClient ? 'Client' : 'Internal'}
         </span>
@@ -89,7 +87,6 @@ function FileRow({ file, canEdit, downloading, removing, onOpen, onRemove, onNot
           </button>
         )}
       </div>
-      {/* Note row */}
       <div className="px-2.5 pb-2 flex items-center gap-2 border-t border-tint/40 pt-1.5">
         <span className="text-[10px] text-slate-400 shrink-0">Note</span>
         {canEdit ? (
@@ -136,10 +133,7 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
     await onChange({ value: json });
   }
 
-  const tier = progressTier(it);
-  const edge = it.status === 'NA' ? 'border-transparent' : tier ? { watch: 'border-tint', flag: 'border-green', urgent: 'border-deep' }[tier] : it.status === 'Completed' ? 'border-tint' : 'border-transparent';
   const isDone = it.status === 'Completed';
-  const overdue = it.due && it.due < today() && !isDone && it.status !== 'NA';
   const fileCount = itemFiles.length;
   const hasFiles = isTextType ? textVals.some((v) => v.trim()) : fileCount > 0;
 
@@ -153,7 +147,7 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
       const res = await api.documents.upload(fd);
       const rawFile = res?.file;
       const done = it.status === 'Completed' || it.status === 'NA';
-      await onChange({ fileNote: file.name, status: done ? it.status : 'Under Review', dateReceived: it.dateReceived || today(), queried: false });
+      await onChange({ fileNote: file.name, status: done ? it.status : 'Under Review', queried: false });
       if (rawFile && onFileUploaded) {
         onFileUploaded({
           id: rawFile.id,
@@ -166,7 +160,7 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
           status: rawFile.status,
         });
       }
-      toast('File uploaded', 'success');
+      toast('New version uploaded', 'success');
     } catch (err) {
       toast(err.message, 'error');
     } finally {
@@ -193,11 +187,17 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
     }
   }
 
+  // Sort files chronologically
+  const sortedFiles = [...itemFiles].sort((a, b) => {
+    const ta = a.uploadedAt ? new Date(a.uploadedAt).getTime() : 0;
+    const tb = b.uploadedAt ? new Date(b.uploadedAt).getTime() : 0;
+    return ta - tb;
+  });
+
   return (
-    <div className={`group pl-3 pr-4 py-2 border-l-4 ${edge} ${it.status === 'NA' ? 'opacity-40' : ''} ${selected ? 'bg-fog/60' : ''} transition-colors`}>
+    <div className={`group pl-3 pr-4 py-2 border-l-4 border-transparent ${it.status === 'NA' ? 'opacity-40' : ''} ${selected ? 'bg-fog/60' : ''} transition-colors`}>
       <div className="flex items-center gap-3">
         {selectMode && <input type="checkbox" checked={!!selected} onChange={onToggleSel} title="Select this task" className="shrink-0 accent-green" />}
-        <span className="font-mono text-[11px] text-slate-400 w-11 shrink-0">{it.ref !== '•' && it.ref !== '+' ? it.ref : ''}</span>
         {/* File status indicator */}
         <span
           className="w-5 shrink-0 flex items-center justify-center gap-0.5"
@@ -219,14 +219,14 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
           )}
         </span>
         <span className={`flex-1 min-w-0 text-sm ${isDone ? 'text-slate-500' : 'text-ink'} ${it.status === 'NA' ? 'line-through' : ''}`}>
-          <span className="truncate block">
-            {it.p}
-            {it.due && !isDone && it.status !== 'NA' && (
-              <span className={`ml-1.5 text-[10px] ${overdue ? 'text-deep font-medium' : 'text-slate-400'}`}>{overdue ? 'overdue ' : 'due '}{it.due}</span>
-            )}
-          </span>
+          <span className="truncate block">{it.p}</span>
         </span>
-        {tier && !selectMode && <span className={`text-[10px] tabular-nums shrink-0 ${TIER_STYLE[tier].text}`} title="Days since last progress">{ageLabel(noProgressDays(it))}</span>}
+        {/* Ad-hoc secondary assignee badge */}
+        {it.adHocOwner && !selectMode && (
+          <span className="text-[10px] text-slate-500 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded shrink-0 max-w-[6rem] truncate" title={`Also: ${it.adHocOwner}`}>
+            +{it.adHocOwner.split(' ')[0]}
+          </span>
+        )}
         {canEdit
           ? <OwnerSelect value={it.owner} team={team} onChange={(v) => onChange({ owner: v })} />
           : it.owner
@@ -239,16 +239,16 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
       </div>
 
       {open && (
-        <div className="mt-2 pb-1 space-y-3" style={{ paddingLeft: '3.75rem' }}>
+        <div className="mt-2 pb-1 space-y-3" style={{ paddingLeft: '2rem' }}>
 
-          {/* ── Files or text values ──────────────────────────────── */}
+          {/* ── Files (versioned) or text values ──────────────────────────────── */}
           {isTextType ? (
             <div className="space-y-1.5">
               {textVals.map((v, idx) => (
                 <div key={idx} className="flex items-center gap-1.5">
                   {canEdit ? (
                     <input
-                      type={kind === 'number' ? 'text' : 'text'}
+                      type="text"
                       inputMode={kind === 'number' ? 'decimal' : 'text'}
                       value={v}
                       onChange={(e) => { const n = [...textVals]; n[idx] = e.target.value; setTextVals(n); }}
@@ -277,28 +277,37 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
               )}
             </div>
           ) : (
-            <div className="space-y-1.5">
-              {itemFiles.map((f) => (
-                <FileRow
-                  key={f.id}
-                  file={f}
-                  canEdit={canEdit}
-                  downloading={downloading === f.id}
-                  removing={removing === f.id}
-                  onOpen={() => openFile(f.id)}
-                  onRemove={() => removeAttachedFile(f.id)}
-                  onNoteChange={(note) => {
-                    if (onFileUploaded) onFileUploaded({ ...f, note });
-                    if (onFileRemoved) onFileRemoved(f.id);
-                  }}
-                />
-              ))}
+            <div className="space-y-2">
+              {/* Version history header */}
+              {sortedFiles.length > 0 && (
+                <div className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">
+                  {sortedFiles.length === 1 ? 'File' : `${sortedFiles.length} versions`}
+                </div>
+              )}
+              <div className="space-y-1.5">
+                {sortedFiles.map((f, idx) => (
+                  <FileRow
+                    key={f.id}
+                    file={f}
+                    versionNum={idx + 1}
+                    canEdit={canEdit}
+                    downloading={downloading === f.id}
+                    removing={removing === f.id}
+                    onOpen={() => openFile(f.id)}
+                    onRemove={() => removeAttachedFile(f.id)}
+                    onNoteChange={(note) => {
+                      if (onFileUploaded) onFileUploaded({ ...f, note });
+                      if (onFileRemoved) onFileRemoved(f.id);
+                    }}
+                  />
+                ))}
+              </div>
               {canEdit && (
                 <label className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-dashed text-xs cursor-pointer transition-colors ${uploading ? 'border-tint text-slate-400 cursor-wait' : 'border-tint text-slate-400 hover:border-green hover:text-green'}`}>
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
                   </svg>
-                  {uploading ? 'Uploading…' : fileCount > 0 ? 'Add another file' : 'Upload a file'}
+                  {uploading ? 'Uploading…' : fileCount > 0 ? 'Add new version' : 'Upload a file'}
                   <input ref={fileInputRef} type="file" className="hidden" disabled={uploading} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(f); }} />
                 </label>
               )}
@@ -353,12 +362,26 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
             </div>
           </div>
 
-          {/* ── Dates ─────────────────────────────────────────────── */}
+          {/* ── Ad-hoc secondary assignee ───────────────────────── */}
+          {canEdit && (
+            <div className="text-xs text-slate-500">
+              Secondary assignee
+              <div className="text-[10px] text-slate-400 mb-1">Ad-hoc cover when primary is unavailable</div>
+              <select
+                value={it.adHocOwner || ''}
+                onChange={(e) => onChange({ adHocOwner: e.target.value })}
+                className="text-xs border border-tint rounded px-2 py-1 bg-paper focus:outline-none focus:border-green"
+              >
+                <option value="">None</option>
+                {team.map((p) => (
+                  <option key={p.id} value={p.name}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* ── Due date ──────────────────────────────────────────── */}
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-500">
-            <label className="flex items-center gap-2">
-              Received on
-              <input type="date" value={it.dateReceived || ''} max={today()} disabled={!canEdit} onChange={(e) => onChange({ dateReceived: e.target.value })} className="border border-tint rounded px-2 py-1 text-xs text-ink focus:outline-none focus:border-green disabled:opacity-60" />
-            </label>
             <label className="flex items-center gap-2">
               Due
               <input type="date" value={it.due || ''} disabled={!canEdit} onChange={(e) => onChange({ due: e.target.value })} className="border border-tint rounded px-2 py-1 text-xs text-ink focus:outline-none focus:border-green disabled:opacity-60" />
@@ -452,7 +475,6 @@ function ScopePanel({ orderedHeads, setHeadIncluded, onClose, updateItem, engage
 
   return (
     <Modal title="Scope — which areas apply to this client" onClose={onClose} wide>
-      {/* Summary totals */}
       <div className="flex items-center justify-between gap-4 mb-4">
         <p className="text-xs text-slate-500 max-w-md leading-relaxed">
           Toggle sub-categories in or out of scope. Expand any sub-category to mark each task as{' '}
@@ -472,7 +494,6 @@ function ScopePanel({ orderedHeads, setHeadIncluded, onClose, updateItem, engage
         </div>
       </div>
 
-      {/* Library catalogue box */}
       <div className="mb-4 rounded-lg border border-tint bg-fog/40 overflow-hidden">
         <button
           onClick={() => setCatalogueOpen(v => !v)}
@@ -516,7 +537,6 @@ function ScopePanel({ orderedHeads, setHeadIncluded, onClose, updateItem, engage
         )}
       </div>
 
-      {/* Scope configuration — sections */}
       <div className="space-y-2 max-h-[52vh] overflow-y-auto pr-1">
         {Object.entries(bySection).map(([sec, hs]) => {
           const includedHs = hs.filter(h => h.items[0]?.headIncluded);
@@ -526,7 +546,6 @@ function ScopePanel({ orderedHeads, setHeadIncluded, onClose, updateItem, engage
 
           return (
             <div key={sec} className="rounded-lg border border-tint overflow-hidden">
-              {/* Section header — click to expand/collapse */}
               <button
                 onClick={() => setCollSections(p => ({ ...p, [sec]: !p[sec] }))}
                 className="w-full flex items-center gap-2 px-3 py-2.5 bg-fog/60 hover:bg-fog transition-colors text-left"
@@ -542,7 +561,6 @@ function ScopePanel({ orderedHeads, setHeadIncluded, onClose, updateItem, engage
                 <span className="text-[10px] text-slate-400 shrink-0 ml-2">{includedHs.length}/{hs.length} in scope</span>
               </button>
 
-              {/* Sub-categories */}
               {!isCollapsed && (
                 <div className="divide-y divide-tint/40">
                   {hs.map((h) => {
@@ -555,25 +573,18 @@ function ScopePanel({ orderedHeads, setHeadIncluded, onClose, updateItem, engage
                     return (
                       <div key={h.headId}>
                         <div className={`flex items-center gap-2 px-3 py-2 ${!on ? 'opacity-50' : ''}`}>
-                          {/* In-scope toggle */}
                           <button
                             onClick={() => setHeadIncluded(h.headId, !on)}
                             className={`w-4 h-4 rounded flex items-center justify-center text-[10px] shrink-0 transition-colors ${on ? 'bg-green text-paper' : 'border border-tint bg-paper text-transparent'}`}
                             title={on ? 'Remove from scope' : 'Add to scope'}
                           >✓</button>
-
-                          {/* Name */}
                           <span className="flex-1 text-sm text-ink min-w-0 truncate">{h.sub}</span>
-
-                          {/* Client / Team chips */}
                           {on && (
                             <div className="flex items-center gap-1 shrink-0">
                               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green/10 text-green font-medium tabular-nums">{cliCount} client</span>
                               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-deep/10 text-deep font-medium tabular-nums">{teamCount} team</span>
                             </div>
                           )}
-
-                          {/* Tasks dropdown trigger */}
                           <button
                             onClick={() => setOpenHead(isOpen ? null : h.headId)}
                             className="flex items-center gap-1 text-[11px] text-slate-500 hover:text-ink px-2 py-1 rounded hover:bg-fog transition-colors shrink-0"
@@ -584,14 +595,12 @@ function ScopePanel({ orderedHeads, setHeadIncluded, onClose, updateItem, engage
                           </button>
                         </div>
 
-                        {/* Expanded tasks panel */}
                         {isOpen && (
                           <div className="border-t border-tint/40 bg-fog/20">
                             <div className="divide-y divide-tint/30">
                               {h.items.map((it) => (
                                 <div key={it.id} className="px-4 py-1.5 flex items-center gap-3">
-                                  <span className="font-mono text-[10px] text-slate-400 w-10 shrink-0">{it.ref !== '•' && it.ref !== '+' ? it.ref : ''}</span>
-                                  <span className={`flex-1 text-xs min-w-0 ${it.status === 'NA' ? 'line-through text-slate-400' : 'text-ink'}`}>{it.p}</span>
+                                  <span className="flex-1 text-xs min-w-0 text-ink">{it.p}</span>
                                   <div className="flex rounded border border-tint overflow-hidden text-[10px] shrink-0" role="group" aria-label="Task assignee">
                                     <button
                                       onClick={() => updateItem(it.id, { requestable: true })}
@@ -605,8 +614,6 @@ function ScopePanel({ orderedHeads, setHeadIncluded, onClose, updateItem, engage
                                 </div>
                               ))}
                             </div>
-
-                            {/* Add task row */}
                             {isAddingTask ? (
                               <div className="px-3 py-2 flex items-center gap-2 border-t border-tint/40 bg-paper/60">
                                 <input
@@ -636,7 +643,6 @@ function ScopePanel({ orderedHeads, setHeadIncluded, onClose, updateItem, engage
                     );
                   })}
 
-                  {/* Add sub-category */}
                   {addingSubInSection === sec ? (
                     <div className="px-3 py-2 flex items-center gap-2 bg-fog/40">
                       <input
@@ -662,7 +668,6 @@ function ScopePanel({ orderedHeads, setHeadIncluded, onClose, updateItem, engage
           );
         })}
 
-        {/* Add overall category */}
         <div className="pt-1">
           {addingCategory ? (
             <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-tint bg-fog/20">
@@ -693,7 +698,8 @@ function ScopePanel({ orderedHeads, setHeadIncluded, onClose, updateItem, engage
   );
 }
 
-function ComposeModal({ compose, setCompose, phone, waGroupId, engagementId, onConfirm, onGroupSent }) {
+// ---- Compose / message modal ----
+function ComposeModal({ compose, setCompose, waGroupId, engagementId, onConfirm, onGroupSent }) {
   const [copied, setCopied] = useState(false);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
@@ -724,7 +730,7 @@ function ComposeModal({ compose, setCompose, phone, waGroupId, engagementId, onC
   ].filter(Boolean).join(' · ');
 
   const groupLabel = waGroupId
-    ? (waGroupId.length > 20 ? waGroupId.slice(0, 20) + '…' : waGroupId)
+    ? (waGroupId.length > 30 ? waGroupId.slice(0, 30) + '…' : waGroupId)
     : null;
 
   return (
@@ -740,10 +746,8 @@ function ComposeModal({ compose, setCompose, phone, waGroupId, engagementId, onC
         </div>
         <div className="text-right ml-4 shrink-0">
           {groupLabel
-            ? <p className="text-xs text-slate-500">Sending to group <span className="font-mono text-ink">{groupLabel}</span></p>
-            : phone
-              ? <p className="text-xs text-slate-500">To <span className="font-mono text-ink">+{phone}</span></p>
-              : <p className="text-xs text-slate-400">No group or phone linked</p>
+            ? <p className="text-xs text-slate-500">Sending to group <span className="font-mono text-ink text-[11px] break-all">{groupLabel}</span></p>
+            : <p className="text-xs text-slate-400">No group linked — add a group ID in engagement settings</p>
           }
           <p className="text-xs text-slate-400 mt-0.5">Edit the message below before sending.</p>
         </div>
@@ -761,7 +765,6 @@ function ComposeModal({ compose, setCompose, phone, waGroupId, engagementId, onC
           <div className="flex gap-2">
             <Btn kind="ghost" onClick={() => setCompose(null)}>Cancel</Btn>
             <Btn kind="ghost" onClick={() => onConfirm(false)} title="Record this as sent without opening WhatsApp">Mark as sent</Btn>
-            <Btn kind="ghost" onClick={() => onConfirm(true)} disabled={!phone}>Open WhatsApp</Btn>
             <Btn
               onClick={sendToGroup}
               disabled={!waGroupId || sending}
@@ -772,7 +775,88 @@ function ComposeModal({ compose, setCompose, phone, waGroupId, engagementId, onC
           </div>
         </div>
       )}
-      {!waGroupId && !sent && <p className="text-xs text-deep mt-2 text-right">No WA group linked — add a group ID on this engagement to send directly.</p>}
+      {!waGroupId && !sent && <p className="text-xs text-deep mt-2 text-right">No WA group linked — add a group ID in engagement settings to send directly.</p>}
+    </Modal>
+  );
+}
+
+// ---- Edit engagement details modal ----
+function EditEngagementModal({ engagement, client, team, onSave, onClose }) {
+  const [phone, setPhone] = useState(client?.phone || '');
+  const [waGroupId, setWaGroupId] = useState(engagement.waGroupId || '');
+  const [incharge, setIncharge] = useState(engagement.incharge || '');
+  const [deadline, setDeadline] = useState(engagement.deadline || '');
+  const [saving, setSaving] = useState(false);
+  const toast = useToast();
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      await onSave({ phone, waGroupId, incharge, deadline });
+      onClose();
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal title={`Edit FY ${engagement.year} details`} onClose={onClose}>
+      <div className="space-y-4 py-1">
+        <label className="block text-xs text-slate-600">
+          WhatsApp number
+          <div className="text-[10px] text-slate-400 mb-1">Client's direct number for WhatsApp messages</div>
+          <input
+            type="tel"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="e.g. 923001234567"
+            className="mt-0.5 w-full border border-tint rounded px-3 py-2 text-sm text-ink bg-paper focus:outline-none focus:border-green"
+          />
+        </label>
+
+        <label className="block text-xs text-slate-600">
+          WhatsApp group ID
+          <div className="text-[10px] text-slate-400 mb-1">Group ID for direct API sends (e.g. 120363412538569380@g.us)</div>
+          <input
+            type="text"
+            value={waGroupId}
+            onChange={(e) => setWaGroupId(e.target.value)}
+            placeholder="120363412538569380@g.us"
+            className="mt-0.5 w-full border border-tint rounded px-3 py-2 text-sm font-mono text-ink bg-paper focus:outline-none focus:border-green"
+          />
+        </label>
+
+        <div className="text-xs text-slate-600">
+          Assignee (in-charge)
+          <div className="text-[10px] text-slate-400 mb-1">Primary person responsible for this engagement year</div>
+          <select
+            value={incharge}
+            onChange={(e) => setIncharge(e.target.value)}
+            className="mt-0.5 w-full border border-tint rounded px-3 py-2 text-sm text-ink bg-paper focus:outline-none focus:border-green"
+          >
+            <option value="">Unassigned</option>
+            {team.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
+          </select>
+        </div>
+
+        <label className="block text-xs text-slate-600">
+          Due date
+          <div className="text-[10px] text-slate-400 mb-1">When this year's work must be finished</div>
+          <input
+            type="date"
+            value={deadline}
+            onChange={(e) => setDeadline(e.target.value)}
+            className="mt-0.5 w-full border border-tint rounded px-3 py-2 text-sm text-ink bg-paper focus:outline-none focus:border-green"
+          />
+        </label>
+      </div>
+
+      <div className="flex justify-end gap-2 pt-4 mt-2 border-t border-tint">
+        <Btn kind="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn onClick={handleSave} disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</Btn>
+      </div>
     </Modal>
   );
 }
@@ -794,7 +878,6 @@ function FilesModal({ engagementId, files, heads, onClose, onAdd, onMatch, onUnm
   const targets = heads.flatMap((h) => h.items.filter((it) => it.status !== 'NA' && (!ql || it.p.toLowerCase().includes(ql) || h.sub.toLowerCase().includes(ql))).map((it) => ({ it, h })));
   const curFile = unmatched.find((f) => f.id === cur);
 
-  // Group matched files by their head (section/sub-category)
   const matchedGroups = (() => {
     const groups = {};
     for (const f of matched) {
@@ -827,7 +910,6 @@ function FilesModal({ engagementId, files, heads, onClose, onAdd, onMatch, onUnm
         </label>
       </div>
 
-      {/* Unmatched + task matcher */}
       <div className="grid md:grid-cols-5 gap-4">
         <div className="md:col-span-2">
           <div className="text-xs font-medium text-slate-600 mb-1">Unmatched <span className="font-mono text-slate-400">{unmatched.length}</span></div>
@@ -873,7 +955,6 @@ function FilesModal({ engagementId, files, heads, onClose, onAdd, onMatch, onUnm
               <div className="border border-tint rounded-lg divide-y divide-tint/60 max-h-[50vh] overflow-y-auto">
                 {targets.slice(0, 120).map(({ it, h }) => (
                   <button key={it.id} onClick={() => { onMatch(curFile.id, it.id); setQ(''); }} className="w-full flex items-center gap-3 px-3 py-2 hover:bg-fog text-left">
-                    <span className="font-mono text-[11px] text-slate-400 w-11 shrink-0">{it.ref !== '•' && it.ref !== '+' ? it.ref : ''}</span>
                     <span className="flex-1 min-w-0">
                       <span className="block text-sm text-ink truncate">{it.p}</span>
                       <span className="block text-xs text-slate-400 truncate">{h.sub}</span>
@@ -886,7 +967,6 @@ function FilesModal({ engagementId, files, heads, onClose, onAdd, onMatch, onUnm
         </div>
       </div>
 
-      {/* Matched files — grouped by section/sub, collapsed by default */}
       {matched.length > 0 && (
         <div className="mt-5 border-t border-tint pt-4">
           <div className="text-xs font-medium text-slate-600 mb-2">
@@ -947,8 +1027,9 @@ export default function EngagementDetail() {
   const [sel, setSel] = useState({});
   const [filesOpen, setFilesOpen] = useState(false);
   const [stageFilter, setStageFilter] = useState(null);
-  const [typeFilter, setTypeFilter] = useState('all'); // 'all' | 'client' | 'team'
+  const [typeFilter, setTypeFilter] = useState('all');
   const [q, setQ] = useState('');
+  const [editingDetails, setEditingDetails] = useState(false);
 
   const canEdit = user?.role === 'partner' || user?.role === 'manager' || (user?.role === 'student' && engagement?.incharge === user?.name);
   const isPartnerManager = user?.role === 'partner' || user?.role === 'manager';
@@ -1002,7 +1083,6 @@ export default function EngagementDetail() {
     const prevIncharge = engagement?.incharge || '';
     await commitEng({ incharge: name });
     if (name) {
-      // Reassign tasks that belong to the previous in-charge or have no owner
       const toReassign = items.filter(it => !it.owner || it.owner === prevIncharge);
       if (toReassign.length > 0) {
         setItems(prev => prev.map(it => (!it.owner || it.owner === prevIncharge) ? { ...it, owner: name } : it));
@@ -1011,6 +1091,28 @@ export default function EngagementDetail() {
           const visibleCount = toReassign.filter(it => it.headIncluded && it.status !== 'NA').length;
           toast(`Assigned ${visibleCount} task${visibleCount !== 1 ? 's' : ''} to ${name}`, 'success');
         } catch (err) { toast(err.message, 'error'); load(); }
+      }
+    }
+  }
+
+  async function saveEngagementDetails({ phone, waGroupId, incharge, deadline }) {
+    // Update engagement fields
+    const engPatch = {};
+    if (waGroupId !== (engagement.waGroupId || '')) engPatch.waGroupId = waGroupId;
+    if (deadline !== (engagement.deadline || '')) engPatch.deadline = deadline;
+
+    if (Object.keys(engPatch).length) await commitEng(engPatch);
+
+    // Update incharge (with task reassignment)
+    if (incharge !== (engagement.incharge || '')) await commitIncharge(incharge);
+
+    // Update client phone if changed
+    if (client && phone !== (client.phone || '')) {
+      try {
+        await api.clients.update(client.id, { phone });
+        setClient(prev => ({ ...prev, phone }));
+      } catch (err) {
+        toast(err.message, 'error');
       }
     }
   }
@@ -1041,7 +1143,7 @@ export default function EngagementDetail() {
       await api.inbox.assign(fileId, itemId);
       const it = items.find((x) => x.id === itemId);
       if (it && it.status !== 'Completed' && it.status !== 'NA') {
-        await api.items.update(itemId, { status: 'Under Review', dateReceived: it.dateReceived || td, queried: false });
+        await api.items.update(itemId, { status: 'Under Review', queried: false });
       }
       toast('File matched to task', 'success');
       load();
@@ -1083,7 +1185,6 @@ export default function EngagementDetail() {
   const m = engMetrics({ ...engagement, items }, files);
   const phone = normalizePhone(client?.phone || engagement.contactPhone);
 
-  // ---- headings, ad-hoc always last, always present ----
   const heads = {};
   for (const it of items) (heads[it.headId] = heads[it.headId] || { headId: it.headId, section: it.section, sub: it.sub, items: [] }).items.push(it);
   if (!heads['adhoc']) heads['adhoc'] = { headId: 'adhoc', section: 'Z', sub: 'Ad-hoc', items: [] };
@@ -1098,6 +1199,7 @@ export default function EngagementDetail() {
   const stageCount = {};
   items.forEach((it) => { const st = stageOf(it); if (st) stageCount[st] = (stageCount[st] || 0) + 1; });
   const naCount = items.filter((it) => it.headIncluded && it.status === 'NA').length;
+  const unmatchedCount = files.filter(f => !f.assignedItemId && f.status !== 'Irrelevant').length;
 
   const ql = q.trim().toLowerCase();
   const visibleHeads = includedHeads
@@ -1122,13 +1224,12 @@ export default function EngagementDetail() {
 
   function openCompose() { if (messageable === 0) return; setCompose({ items: selItems, ...preview }); }
 
-  async function confirmSend(openWa = true) {
+  async function confirmSend(openWa = false) {
     const patches = afterSend(items, compose);
     setItems((prev) => prev.map((it) => { const p = patches.find((x) => x.id === it.id); return p ? { ...it, ...p.patch } : it; }));
     try {
       await api.items.bulkUpdate(patches.map((p) => ({ id: p.id, ...p.patch })));
-      if (openWa && phone) window.open(`https://wa.me/${phone}?text=${encodeURIComponent(compose.text)}`, '_blank');
-      toast(openWa ? 'Opening WhatsApp — requests moved to Awaited' : 'Marked as sent — requests moved to Awaited', 'success');
+      toast('Marked as sent — requests moved to Awaited', 'success');
     } catch (err) {
       toast(err.message, 'error');
       load();
@@ -1182,70 +1283,71 @@ export default function EngagementDetail() {
             <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mt-1 text-sm text-slate-500">
               <span>FY {engagement.year}</span>
               {engagement.rolledFrom && <span className="text-xs text-green bg-fog px-2 py-0.5 rounded-full">rolled forward</span>}
-              {client?.phone && <span className="text-slate-400 text-xs">+{normalizePhone(client.phone)}</span>}
-              <label className="flex items-center gap-1.5 text-xs text-slate-400" title="When this year's work must be finished.">
-                Due
-                <input type="date" value={engagement.deadline || ''} disabled={!isPartnerManager} onChange={(e) => commitEng({ deadline: e.target.value })} className={`text-xs rounded-full border px-2 py-0.5 bg-paper focus:outline-none focus:border-green ${engagement.deadline ? 'text-ink border-tint' : 'text-slate-400 border-green'}`} />
-                {dueText && <span className={daysLeft < 0 && m.pct < 100 ? 'text-deep font-medium' : daysLeft <= 7 && m.pct < 100 ? 'text-green' : 'text-slate-400'}>{dueText}</span>}
-              </label>
-              <label className="flex items-center gap-1.5 text-xs text-slate-400">
-                In-charge
-                <select value={engagement.incharge || ''} disabled={!isPartnerManager} onChange={(e) => commitIncharge(e.target.value)} className={`text-xs rounded-full border px-2 py-0.5 bg-paper focus:outline-none focus:border-green ${engagement.incharge ? 'text-ink border-tint' : 'text-slate-400 border-green'}`}>
-                  <option value="">Unassigned</option>
-                  {team.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
-                </select>
-              </label>
-              {isPartnerManager && (
-                <label className="flex items-center gap-1 text-xs text-slate-400" title="The client's WhatsApp group.">
-                  Group
-                  <EditableText value={engagement.waGroupId || ''} onSave={(v) => commitEng({ waGroupId: v.trim() })} placeholder="not linked" className="text-xs w-24" mono />
-                </label>
+              {phone && <span className="text-slate-400 text-xs">+{phone}</span>}
+              {engagement.deadline && (
+                <span className="text-xs text-slate-400">
+                  Due {engagement.deadline}
+                  {dueText && <span className={`ml-1 ${daysLeft < 0 && m.pct < 100 ? 'text-deep font-medium' : daysLeft <= 7 && m.pct < 100 ? 'text-green' : 'text-slate-400'}`}>({dueText})</span>}
+                </span>
+              )}
+              {engagement.incharge && <span className="text-xs text-slate-400">In-charge: {engagement.incharge}</span>}
+              {isPartnerManager && engagement.waGroupId && (
+                <span className="text-xs text-slate-400 truncate max-w-[200px]" title={engagement.waGroupId}>
+                  Group: <span className="font-mono">{engagement.waGroupId}</span>
+                </span>
               )}
             </div>
           </div>
-          <div className="text-right shrink-0">
-            <div className="text-3xl font-semibold text-ink tabular-nums">{m.pct}%</div>
-            <div className="font-mono text-[11px] text-slate-500">{m.done} / {m.total} complete</div>
+          <div className="flex items-center gap-3 shrink-0">
+            {isPartnerManager && (
+              <button
+                onClick={() => setEditingDetails(true)}
+                className="flex items-center gap-1.5 text-xs text-slate-500 border border-tint rounded-lg px-3 py-1.5 hover:border-green hover:text-green transition-colors"
+                title="Edit engagement details"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                </svg>
+                Edit
+              </button>
+            )}
+            <div className="text-right">
+              <div className="font-mono text-[13px] text-slate-600 font-medium">{m.done} / {m.total} complete</div>
+            </div>
           </div>
         </div>
         <div className="mt-3 h-1.5 bg-fog rounded-full overflow-hidden"><div className="h-full bg-green rounded-full" style={{ width: m.pct + '%' }} /></div>
       </header>
 
-      <div className="mb-3 bg-fog rounded-lg overflow-hidden grid grid-cols-5 divide-x divide-tint">
+      {/* KPI cards: Not started | To request | Files unmatched | Awaited | To review | Complete */}
+      <div className="mb-3 bg-fog rounded-lg overflow-hidden grid divide-x divide-tint" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }}>
         {STAGES.map(([key, label, hint]) => {
           const n = stageCount[key] || 0;
           const on = stageFilter === key;
           return (
-            <button key={key} onClick={() => setStageFilter(on ? null : key)} title={hint} className={`text-left px-4 py-3 transition-colors ${on ? 'bg-paper' : 'hover:bg-paper/60'} ${n === 0 ? 'opacity-50' : ''}`}>
-              <div className={`font-serif text-[26px] leading-none font-medium tabular-nums ${on || key === 'complete' ? 'text-green' : 'text-ink'}`}>{n}</div>
-              <div className="text-xs text-slate-600 mt-1">{label}</div>
+            <button key={key} onClick={() => setStageFilter(on ? null : key)} title={hint} className={`text-left px-3 py-3 transition-colors ${on ? 'bg-paper' : 'hover:bg-paper/60'} ${n === 0 ? 'opacity-50' : ''}`}>
+              <div className={`font-serif text-[24px] leading-none font-medium tabular-nums ${on || key === 'complete' ? 'text-green' : 'text-ink'}`}>{n}</div>
+              <div className="text-[11px] text-slate-600 mt-1 leading-tight">{label}</div>
             </button>
           );
         })}
+        {/* Unmatched files KPI card */}
+        <button
+          onClick={() => setFilesOpen(true)}
+          title="Files received but not yet matched to a task"
+          className={`text-left px-3 py-3 transition-colors hover:bg-paper/60 ${unmatchedCount === 0 ? 'opacity-50' : ''}`}
+        >
+          <div className={`font-serif text-[24px] leading-none font-medium tabular-nums ${unmatchedCount > 0 ? 'text-deep' : 'text-ink'}`}>{unmatchedCount}</div>
+          <div className="text-[11px] text-slate-600 mt-1 leading-tight">Unmatched</div>
+        </button>
       </div>
-
-      {/* Document repository strip — visible to all */}
-      <button
-        onClick={() => setFilesOpen(true)}
-        className="w-full mb-4 flex items-center gap-3 px-4 py-2.5 rounded-lg border border-tint bg-fog/30 hover:border-green hover:bg-fog/50 transition-colors group text-left"
-      >
-        <svg className="text-slate-400 group-hover:text-green shrink-0 transition-colors" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-        </svg>
-        <span className="text-sm font-medium text-ink">Documents</span>
-        {files.length > 0 && <span className="text-xs text-slate-500">{files.filter(f => f.assignedItemId).length > 0 || files.some(f => !f.assignedItemId && f.status !== 'Irrelevant') ? `${files.filter(f => f.status !== 'Irrelevant').length} file${files.filter(f => f.status !== 'Irrelevant').length !== 1 ? 's' : ''} received` : ''}</span>}
-        {files.filter(f => !f.assignedItemId && f.status !== 'Irrelevant').length > 0 && (
-          <span className="text-xs text-deep font-medium">· {files.filter(f => !f.assignedItemId && f.status !== 'Irrelevant').length} unmatched</span>
-        )}
-        <span className="flex-1" />
-        <span className="text-xs text-slate-400 group-hover:text-green transition-colors">Open →</span>
-      </button>
 
       {canEdit && (
         <div className="sticky top-0 z-20 -mx-8 px-8 pt-2.5 pb-2 mb-4 bg-paper border-b border-tint">
           <div className="flex flex-wrap items-center gap-2">
 
-            {/* Client messaging workflow group */}
+            {/* Client messaging workflow */}
             {selecting ? (
               <div className="flex items-center gap-2 flex-wrap">
                 <div className="flex items-stretch rounded-lg border border-tint overflow-hidden text-xs">
@@ -1258,25 +1360,25 @@ export default function EngagementDetail() {
                     Message{messageable > 0 ? <span className="ml-1.5 font-normal opacity-80 tabular-nums">{messageable}</span> : null}
                   </button>
                 </div>
-                <span className="text-[10px] text-slate-400">Select:</span>
-                <button onClick={() => startSelect(owedToUs)} className="text-xs text-green hover:underline underline-offset-2">Everything owed</button>
-                <button onClick={() => startSelect((it) => it.headIncluded && it.requestable && it.status === 'No progress')} className="text-xs text-slate-500 hover:underline underline-offset-2">Not yet requested</button>
-                <button onClick={() => startSelect((it) => owedToUs(it) && it.status === 'Requested')} className="text-xs text-slate-500 hover:underline underline-offset-2">Awaited</button>
-                <button onClick={() => setSel({})} className="text-xs text-slate-400 hover:underline underline-offset-2">Clear</button>
+                <div className="flex items-center gap-1 rounded-lg border border-tint bg-fog/40 px-2 py-1 text-xs">
+                  <span className="text-slate-400 mr-1">Select:</span>
+                  <button onClick={() => startSelect(owedToUs)} className="px-2 py-0.5 rounded text-green hover:bg-paper transition-colors">Everything owed</button>
+                  <span className="text-tint">|</span>
+                  <button onClick={() => startSelect((it) => it.headIncluded && it.requestable && it.status === 'No progress')} className="px-2 py-0.5 rounded text-slate-500 hover:text-ink hover:bg-paper transition-colors">Not yet requested</button>
+                  <span className="text-tint">|</span>
+                  <button onClick={() => startSelect((it) => owedToUs(it) && it.status === 'Requested')} className="px-2 py-0.5 rounded text-slate-500 hover:text-ink hover:bg-paper transition-colors">Awaited</button>
+                  <span className="text-tint">|</span>
+                  <button onClick={() => setSel({})} className="px-2 py-0.5 rounded text-slate-400 hover:text-ink hover:bg-paper transition-colors">Clear</button>
+                </div>
               </div>
             ) : (
-              <div className="flex items-stretch rounded-lg border border-tint overflow-hidden text-xs">
-                <button onClick={() => startSelect(null)} className="px-3 py-1.5 text-slate-600 hover:bg-fog border-r border-tint transition-colors">
-                  Select tasks
-                </button>
-                <button
-                  onClick={() => startSelect(owedToUs)}
-                  disabled={owed === 0}
-                  className={`px-3 py-1.5 font-medium transition-colors ${owed > 0 ? 'text-ink hover:bg-fog' : 'text-slate-400 cursor-not-allowed'}`}
-                >
-                  Message client{owed > 0 ? <span className="ml-1.5 text-[10px] font-normal text-slate-400 tabular-nums">{owed} pending</span> : null}
-                </button>
-              </div>
+              <button
+                onClick={() => startSelect(owedToUs)}
+                className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-ink border border-tint rounded-lg hover:border-green hover:text-green transition-colors"
+              >
+                Message client
+                {owed > 0 && <span className="text-[10px] font-normal text-slate-400 tabular-nums bg-fog px-1.5 py-0.5 rounded-full">{owed} pending</span>}
+              </button>
             )}
 
             {/* Scope */}
@@ -1378,7 +1480,11 @@ export default function EngagementDetail() {
                       onChange={(patch) => updateItem(it.id, patch)}
                       onRemove={canEdit && isAdhoc(it) ? () => { if (confirm(`Delete "${it.p}"? The Activity log keeps a trace.`)) removeItem(it.id); } : null}
                       itemFiles={files.filter(f => f.assignedItemId === it.id)}
-                      onFileUploaded={(file) => setFiles(prev => [...prev, file])}
+                      onFileUploaded={(file) => setFiles(prev => {
+                        const existing = prev.find(f => f.id === file.id);
+                        if (existing) return prev.map(f => f.id === file.id ? file : f);
+                        return [...prev, file];
+                      })}
                       onFileRemoved={(fileId) => setFiles(prev => prev.filter(f => f.id !== fileId))}
                     />
                   ))}
@@ -1405,7 +1511,6 @@ export default function EngagementDetail() {
         <ComposeModal
           compose={compose}
           setCompose={setCompose}
-          phone={phone}
           waGroupId={engagement?.waGroupId || ''}
           engagementId={id}
           onConfirm={confirmSend}
@@ -1420,6 +1525,15 @@ export default function EngagementDetail() {
             try { await api.inbox.markIrrelevant(fileId, isIrrelevant); load(); }
             catch (err) { toast(err.message, 'error'); }
           }}
+        />
+      )}
+      {editingDetails && (
+        <EditEngagementModal
+          engagement={engagement}
+          client={client}
+          team={team}
+          onSave={saveEngagementDetails}
+          onClose={() => setEditingDetails(false)}
         />
       )}
     </div>
