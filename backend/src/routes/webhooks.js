@@ -24,72 +24,71 @@ router.post('/inbound-file', webhookAuth, async (req, res) => {
     return res.status(400).json({ error: 'fileBase64 required — pass the decrypted file from Evolution API getBase64FromMediaMessage' });
   }
 
-  // Dedup: skip if this messageId was already stored
-  if (messageId) {
-    try {
+  try {
+    // Dedup: skip if this messageId was already stored
+    if (messageId) {
       const { rows: dup } = await pool.query(
         'SELECT id FROM inbox_files WHERE message_id = $1 LIMIT 1',
         [messageId]
       );
       if (dup[0]) return res.json({ received: true, duplicate: true });
-    } catch (err) {
-      console.error('Webhook dedup check error:', err);
-      return res.status(500).json({ error: 'Failed to process file' });
     }
-  }
 
-  // Decode and size-check synchronously so we can reject before accepting
-  const buffer = Buffer.from(fileBase64, 'base64');
-  if (buffer.length > MAX_FILE_BYTES) {
-    return res.status(413).json({
-      error: `File exceeds limit (${Math.round(buffer.length / 1024 / 1024)}MB > ${process.env.MAX_INBOX_FILE_MB || 200}MB)`,
-    });
-  }
+    // Decode base64 — Evolution API returns the decrypted file as base64
+    const buffer = Buffer.from(fileBase64, 'base64');
 
-  // Respond immediately — n8n has a 30s timeout and the MinIO upload
-  // (Railway → internet → Cloudflare Tunnel → local Mini PC) can exceed that
-  // for any non-trivial file. Processing continues in the background.
-  res.json({ received: true, queued: true });
-
-  // Background processing — errors are logged only, n8n already got its 200
-  setImmediate(async () => {
-    try {
-      let resolvedEngagementId = engagementId || null;
-
-      if (!resolvedEngagementId && groupId) {
-        const { rows } = await pool.query(
-          'SELECT id FROM engagements WHERE wa_group_id = $1 LIMIT 1',
-          [groupId]
-        );
-        if (rows[0]) resolvedEngagementId = rows[0].id;
-      }
-
-      const storageId = resolvedEngagementId || 'unmatched';
-      const minioKey = await uploadFile(storageId, fileName, buffer, mimeType || 'application/octet-stream');
-      const now = new Date().toISOString();
-
-      if (resolvedEngagementId) {
-        await pool.query(
-          `INSERT INTO inbox_files
-             (engagement_id, name, size, mime_type, minio_key, received_at, uploaded_at,
-              source, sender, message_id, group_id, status)
-           VALUES ($1, $2, $3, $4, $5, $6, $6, 'whatsapp', $7, $8, $9, 'Unmatched')`,
-          [resolvedEngagementId, fileName, buffer.length, mimeType || '', minioKey,
-           now, sender || '', messageId || '', groupId || '']
-        );
-      } else {
-        await pool.query(
-          `INSERT INTO unmatched_inbox
-             (group_id, sender, message_id, name, size, mime_type, minio_key, received_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-          [groupId || '', sender || '', messageId || '', fileName,
-           buffer.length, mimeType || '', minioKey, now]
-        );
-      }
-    } catch (err) {
-      console.error('Webhook inbound-file background error:', err);
+    // File size guard
+    if (buffer.length > MAX_FILE_BYTES) {
+      return res.status(413).json({
+        error: `File exceeds limit (${Math.round(buffer.length / 1024 / 1024)}MB > ${process.env.MAX_INBOX_FILE_MB || 200}MB)`,
+      });
     }
-  });
+
+    // Resolve engagementId from groupId if not provided
+    let resolvedEngagementId = engagementId || null;
+    let matched = !!engagementId;
+
+    if (!resolvedEngagementId && groupId) {
+      const { rows } = await pool.query(
+        'SELECT id FROM engagements WHERE wa_group_id = $1 LIMIT 1',
+        [groupId]
+      );
+      if (rows[0]) {
+        resolvedEngagementId = rows[0].id;
+        matched = true;
+      }
+    }
+
+    // Upload to MinIO — use a placeholder engagement id for unmatched files
+    const storageId = resolvedEngagementId || 'unmatched';
+    const minioKey = await uploadFile(storageId, fileName, buffer, mimeType || 'application/octet-stream');
+    const now = new Date().toISOString();
+
+    if (resolvedEngagementId) {
+      await pool.query(
+        `INSERT INTO inbox_files
+           (engagement_id, name, size, mime_type, minio_key, received_at, uploaded_at,
+            source, sender, message_id, group_id, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $6, 'whatsapp', $7, $8, $9, 'Unmatched')`,
+        [resolvedEngagementId, fileName, buffer.length, mimeType || '', minioKey,
+         now, sender || '', messageId || '', groupId || '']
+      );
+    } else {
+      // Unknown group — store in unmatched_inbox so files aren't silently dropped
+      await pool.query(
+        `INSERT INTO unmatched_inbox
+           (group_id, sender, message_id, name, size, mime_type, minio_key, received_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [groupId || '', sender || '', messageId || '', fileName,
+         buffer.length, mimeType || '', minioKey, now]
+      );
+    }
+
+    res.json({ received: true, matched });
+  } catch (err) {
+    console.error('Webhook inbound-file error:', err);
+    res.status(500).json({ error: 'Failed to process file' });
+  }
 });
 
 // POST /api/webhooks/portal-sync
