@@ -61,7 +61,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ (() => { const d = $json.body.data; const mt = d.messageType; const msg = (d.message && d.message[mt]) || {}; return JSON.stringify({ groupId: d.key.remoteJid, sender: d.key.participant || d.key.remoteJid, messageId: d.key.id, fileName: msg.fileName || msg.caption || (mt + '_' + d.key.id), fileBase64: msg.base64, mimeType: msg.mimetype || 'application/octet-stream' }); })() }}",
+        "jsonBody": "={{ JSON.stringify({ groupId: $json.body.data.key.remoteJid, sender: $json.body.data.key.participant || $json.body.data.key.remoteJid, messageId: $json.body.data.key.id, fileName: $json.body.data.message?.documentMessage?.fileName || $json.body.data.message?.imageMessage?.caption || ($json.body.data.messageType + '_' + $json.body.data.key.id), fileBase64: $json.body.data.message?.documentMessage?.base64 || $json.body.data.message?.imageMessage?.base64 || $json.body.data.message?.audioMessage?.base64 || $json.body.data.message?.videoMessage?.base64 || $json.body.data.message?.stickerMessage?.base64 || $json.body.data.message?.pttMessage?.base64, mimeType: $json.body.data.message?.documentMessage?.mimetype || $json.body.data.message?.imageMessage?.mimetype || $json.body.data.message?.audioMessage?.mimetype || $json.body.data.message?.videoMessage?.mimetype || $json.body.data.message?.stickerMessage?.mimetype || $json.body.data.message?.pttMessage?.mimetype || 'application/octet-stream' }) }}",
         "options": { "timeout": 30000 }
       },
       "name": "POST to CRM Webhook",
