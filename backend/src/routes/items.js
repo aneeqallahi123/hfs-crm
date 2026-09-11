@@ -41,6 +41,7 @@ function toItem(row) {
     contextDocKey: row.context_doc_key || '',
     contextDocName: row.context_doc_name || '',
     contextDocSize: row.context_doc_size || 0,
+    hideLibContextDoc: row.hide_lib_context_doc || false,
     // Library-level context doc (populated by JOIN in GET endpoint)
     libContextDocKey: row.lib_context_doc_key || '',
     libContextDocName: row.lib_context_doc_name || '',
@@ -147,7 +148,8 @@ router.patch('/:id', async (req, res) => {
   const allowed = [
     'status', 'statusSince', 'peak', 'owner', 'adHocOwner', 'fileNote', 'dateRequested',
     'dateReceived', 'queried', 'dateQueried', 'followups', 'lastContact',
-    'remarks', 'due', 'value', 'kind', 'requestable', 'headIncluded', 'ref', 'section', 'sub', 'p'
+    'remarks', 'due', 'value', 'kind', 'requestable', 'headIncluded', 'ref', 'section', 'sub', 'p',
+    'hideLibContextDoc',
   ];
 
   const colMap = {
@@ -158,6 +160,7 @@ router.patch('/:id', async (req, res) => {
     lastContact: 'last_contact', remarks: 'remarks', due: 'due', value: 'value', kind: 'kind',
     requestable: 'requestable', headIncluded: 'head_included', ref: 'ref',
     section: 'section', sub: 'sub', p: 'p',
+    hideLibContextDoc: 'hide_lib_context_doc',
   };
 
   try {

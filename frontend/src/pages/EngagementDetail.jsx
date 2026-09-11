@@ -123,6 +123,7 @@ function ContextDocSection({ it, canEdit, onUpdate }) {
 
   const hasLib = !!it.libContextDocKey;
   const hasOwn = !!it.contextDocKey;
+  const libHidden = !!it.hideLibContextDoc;
 
   async function handleUpload(file) {
     if (!file) return;
@@ -158,7 +159,7 @@ function ContextDocSection({ it, canEdit, onUpdate }) {
 
   return (
     <div className="space-y-1.5">
-      {hasLib && (
+      {hasLib && !libHidden && (
         <div className="flex items-center gap-1.5">
           <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wide w-20 shrink-0">Template</span>
           <a
@@ -173,6 +174,23 @@ function ContextDocSection({ it, canEdit, onUpdate }) {
             <span className="font-medium max-w-[200px] truncate">{it.libContextDocName}</span>
             <span className="text-blue-400 text-[10px]">Context doc</span>
           </a>
+          {canEdit && (
+            <button
+              onClick={() => onUpdate({ hideLibContextDoc: true })}
+              className="text-xs text-slate-400 hover:text-deep"
+              title="Hide template context doc for this engagement year"
+            >✕</button>
+          )}
+        </div>
+      )}
+      {hasLib && libHidden && canEdit && (
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wide w-20 shrink-0">Template</span>
+          <button
+            onClick={() => onUpdate({ hideLibContextDoc: false })}
+            className="text-xs text-slate-400 hover:text-ink border border-dashed border-tint rounded px-2 py-0.5"
+            title="Restore template context doc"
+          >Restore template doc</button>
         </div>
       )}
       {(hasOwn || canEdit) && (
