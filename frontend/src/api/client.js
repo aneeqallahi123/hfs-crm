@@ -85,6 +85,13 @@ export const api = {
     bulkUpdate: (updates) => request('PATCH', '/items/bulk', { updates }),
     addAdhoc: (data) => request('POST', '/items/adhoc', data).then(r => r?.item ?? r),
     delete: (id) => request('DELETE', `/items/${id}`),
+    uploadContextDoc: (itemId, formData) => fetch(`${import.meta.env.VITE_API_URL}/items/${itemId}/context-doc`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      credentials: 'include',
+      body: formData,
+    }).then(r => r.json()),
+    removeContextDoc: (itemId) => request('DELETE', `/items/${itemId}/context-doc`),
   },
   inbox: {
     list: (engagementId) => request('GET', engagementId ? `/inbox?engagementId=${engagementId}` : '/inbox').then(r => r?.files ?? r),
@@ -118,6 +125,13 @@ export const api = {
   library: {
     get: (module = 'audit') => request('GET', `/library?module=${module}`).then(r => r?.library ?? r),
     save: (module, library) => request('PUT', `/library/${module}`, { library }),
+    uploadContextDoc: (itemId, formData) => fetch(`${import.meta.env.VITE_API_URL}/library/items/${itemId}/context-doc`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      credentials: 'include',
+      body: formData,
+    }).then(r => r.json()),
+    removeContextDoc: (itemId) => request('DELETE', `/library/items/${itemId}/context-doc`),
   },
   clientLibrary: {
     get: (clientId, module = 'audit') => request('GET', `/clients/${clientId}/library?module=${module}`),

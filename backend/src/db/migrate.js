@@ -112,6 +112,16 @@ export async function runMigrations() {
     )
   `);
 
+  // Context document columns for library items (template-level)
+  await pool.query(`ALTER TABLE library_items ADD COLUMN IF NOT EXISTS context_doc_key TEXT NOT NULL DEFAULT ''`);
+  await pool.query(`ALTER TABLE library_items ADD COLUMN IF NOT EXISTS context_doc_name TEXT NOT NULL DEFAULT ''`);
+  await pool.query(`ALTER TABLE library_items ADD COLUMN IF NOT EXISTS context_doc_size BIGINT NOT NULL DEFAULT 0`);
+
+  // Context document columns for engagement items (year-specific override)
+  await pool.query(`ALTER TABLE items ADD COLUMN IF NOT EXISTS context_doc_key TEXT NOT NULL DEFAULT ''`);
+  await pool.query(`ALTER TABLE items ADD COLUMN IF NOT EXISTS context_doc_name TEXT NOT NULL DEFAULT ''`);
+  await pool.query(`ALTER TABLE items ADD COLUMN IF NOT EXISTS context_doc_size BIGINT NOT NULL DEFAULT 0`);
+
   // Add per-file note column to inbox_files
   await pool.query(`ALTER TABLE inbox_files ADD COLUMN IF NOT EXISTS note TEXT NOT NULL DEFAULT ''`);
 

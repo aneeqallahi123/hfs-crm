@@ -114,6 +114,109 @@ function parseValues(raw) {
   try { const a = JSON.parse(raw); return Array.isArray(a) && a.length ? a : [raw]; } catch { return [raw]; }
 }
 
+// ---- Context document section (shown at top of task detail) ----
+function ContextDocSection({ it, canEdit, onUpdate }) {
+  const toast = useToast();
+  const inputRef = React.useRef(null);
+  const [uploading, setUploading] = useState(false);
+  const [removing, setRemoving] = useState(false);
+
+  const hasLib = !!it.libContextDocKey;
+  const hasOwn = !!it.contextDocKey;
+
+  async function handleUpload(file) {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await api.items.uploadContextDoc(it.id, fd);
+      if (res.error) throw new Error(res.error);
+      onUpdate({ contextDocKey: res.contextDocKey, contextDocName: res.contextDocName, contextDocSize: res.contextDocSize, contextDocUrl: res.contextDocUrl });
+      toast('Context document attached', 'success');
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleRemove() {
+    setRemoving(true);
+    try {
+      await api.items.removeContextDoc(it.id);
+      onUpdate({ contextDocKey: '', contextDocName: '', contextDocSize: 0, contextDocUrl: null });
+      toast('Context document removed', 'success');
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      setRemoving(false);
+    }
+  }
+
+  if (!hasLib && !hasOwn && !canEdit) return null;
+
+  return (
+    <div className="space-y-1.5">
+      {hasLib && (
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wide w-20 shrink-0">Template</span>
+          <a
+            href={it.libContextDocUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1.5 px-2 py-1 rounded border border-blue-200 bg-blue-50 text-blue-700 text-xs hover:bg-blue-100 transition-colors"
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
+            </svg>
+            <span className="font-medium max-w-[200px] truncate">{it.libContextDocName}</span>
+            <span className="text-blue-400 text-[10px]">Context doc</span>
+          </a>
+        </div>
+      )}
+      {(hasOwn || canEdit) && (
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wide w-20 shrink-0">This year</span>
+          {hasOwn ? (
+            <div className="flex items-center gap-1.5">
+              <a
+                href={it.contextDocUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-1.5 px-2 py-1 rounded border border-blue-200 bg-blue-50 text-blue-700 text-xs hover:bg-blue-100 transition-colors"
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
+                </svg>
+                <span className="font-medium max-w-[200px] truncate">{it.contextDocName}</span>
+                <span className="text-blue-400 text-[10px]">Context doc</span>
+              </a>
+              {canEdit && (
+                <button
+                  onClick={handleRemove}
+                  disabled={removing}
+                  className="text-xs text-slate-400 hover:text-deep"
+                  title="Remove year-specific context document"
+                >{removing ? '…' : '✕'}</button>
+              )}
+            </div>
+          ) : canEdit ? (
+            <>
+              <input ref={inputRef} type="file" className="hidden" onChange={(e) => handleUpload(e.target.files[0])} />
+              <button
+                onClick={() => inputRef.current?.click()}
+                disabled={uploading}
+                className="text-xs text-blue-500 hover:text-blue-700 border border-blue-200 border-dashed rounded px-2 py-0.5"
+              >{uploading ? 'Uploading…' : '+ Add context doc for this year'}</button>
+            </>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---- Item row ----
 function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, selected, onToggleSel, onRemove, itemFiles = [], onFileUploaded, onFileRemoved }) {
   const [open, setOpen] = useState(false);
@@ -259,6 +362,9 @@ function ItemRow({ it, team, canEdit, onChange, engagementId, selectMode, select
 
       {open && (
         <div className="mt-2 pb-1 space-y-3" style={{ paddingLeft: '2rem' }}>
+
+          {/* ── Context documents ────────────────────────────────── */}
+          <ContextDocSection it={it} canEdit={canEdit} onUpdate={onChange} />
 
           {/* ── Files (by category with versioning) or text values ── */}
           {isTextType ? (

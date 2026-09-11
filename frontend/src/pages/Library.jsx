@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { api } from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
@@ -8,6 +8,70 @@ import { SECTION_NAMES } from '../lib/metrics.js';
 
 const ORDER = { A: 0, B: 1, C: 2, D: 3 };
 const TASK_TYPES = ['document', 'number', 'information'];
+
+function fmtSize(bytes) {
+  if (!bytes) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function ContextDocChip({ name, size, url, onRemove, editMode }) {
+  return (
+    <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 text-xs">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
+      </svg>
+      {url ? (
+        <a href={url} target="_blank" rel="noreferrer" className="font-medium hover:underline underline-offset-1 max-w-[180px] truncate" title={name}>{name}</a>
+      ) : (
+        <span className="font-medium max-w-[180px] truncate" title={name}>{name}</span>
+      )}
+      {size > 0 && <span className="text-blue-400 shrink-0">{fmtSize(size)}</span>}
+      {editMode && onRemove && (
+        <button onClick={onRemove} className="ml-0.5 text-blue-400 hover:text-deep shrink-0" title="Remove context document">✕</button>
+      )}
+    </div>
+  );
+}
+
+function ContextDocUpload({ itemId, onUploaded, editMode }) {
+  const toast = useToast();
+  const inputRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
+
+  if (!editMode) return null;
+
+  async function handleFile(file) {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const result = await api.library.uploadContextDoc(itemId, fd);
+      if (result.error) throw new Error(result.error);
+      onUploaded(result);
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <>
+      <input ref={inputRef} type="file" className="hidden" onChange={(e) => handleFile(e.target.files[0])} />
+      <button
+        onClick={() => inputRef.current?.click()}
+        disabled={uploading}
+        className="text-[10px] text-blue-500 hover:text-blue-700 border border-blue-200 rounded px-1.5 py-0.5 shrink-0 whitespace-nowrap"
+        title="Attach a context document to this task"
+      >
+        {uploading ? 'Uploading…' : '+ Context doc'}
+      </button>
+    </>
+  );
+}
 
 function AddSub({ onAdd }) {
   const [v, setV] = useState('');
@@ -59,6 +123,7 @@ export default function Library() {
   const [dirty, setDirty] = useState(false);
   const [collapsed, setCollapsed] = useState({});
   const [newCat, setNewCat] = useState('');
+  const [editMode, setEditMode] = useState(false);
 
   const canEdit = user?.role === 'partner';
 
@@ -72,13 +137,17 @@ export default function Library() {
           section: h.section,
           sub: h.sub,
           items: (h.items || []).map((it) => ({
+            id: it.id,
             ref: it.ref,
             p: it.p,
             req: it.req !== false,
             taskType: it.taskType || 'document',
+            contextDocKey: it.contextDocKey || '',
+            contextDocName: it.contextDocName || '',
+            contextDocSize: it.contextDocSize || 0,
+            contextDocUrl: it.contextDocUrl || null,
           })),
         })));
-        // Collapse all categories by default
         const allCodes = Array.from(new Set(heads.map((h) => h.section)));
         const initCollapsed = {};
         allCodes.forEach((c) => { initCollapsed[c] = true; });
@@ -125,14 +194,48 @@ export default function Library() {
   function addHead(code, sub) { markDirty((prev) => [...prev, { id: newId(), headId: newId(), section: code, sub, items: [] }]); }
   function renameHead(id, sub) { markDirty((prev) => prev.map((h) => (h.id === id ? { ...h, sub } : h))); }
   function removeHead(id) { markDirty((prev) => prev.filter((h) => h.id !== id)); }
-  function addItem(id, p) { markDirty((prev) => prev.map((h) => (h.id === id ? { ...h, items: [...h.items, { ref: '•', p, req: true, taskType: 'document' }] } : h))); }
+  function addItem(id, p) { markDirty((prev) => prev.map((h) => (h.id === id ? { ...h, items: [...h.items, { ref: '•', p, req: true, taskType: 'document', contextDocKey: '', contextDocName: '', contextDocSize: 0, contextDocUrl: null }] } : h))); }
   function updateItem(id, idx, patch) { markDirty((prev) => prev.map((h) => (h.id === id ? { ...h, items: h.items.map((it, i) => (i === idx ? { ...it, ...patch } : it)) } : h))); }
   function removeItem(id, idx) { markDirty((prev) => prev.map((h) => (h.id === id ? { ...h, items: h.items.filter((_, i) => i !== idx) } : h))); }
+
+  function setItemContextDoc(headId, idx, docInfo) {
+    setLib((prev) => prev.map((h) => (h.id === headId ? {
+      ...h,
+      items: h.items.map((it, i) => i === idx ? { ...it, ...docInfo } : it),
+    } : h)));
+    setDirty(true);
+  }
+
+  async function removeItemContextDoc(headId, idx, itemId) {
+    if (!itemId || itemId.startsWith('tmp_')) {
+      setItemContextDoc(headId, idx, { contextDocKey: '', contextDocName: '', contextDocSize: 0, contextDocUrl: null });
+      return;
+    }
+    try {
+      await api.library.removeContextDoc(itemId);
+      setItemContextDoc(headId, idx, { contextDocKey: '', contextDocName: '', contextDocSize: 0, contextDocUrl: null });
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  }
 
   async function save() {
     setSaving(true);
     try {
-      const payload = lib.map((h) => ({ headId: h.headId, section: h.section, sub: h.sub, items: h.items }));
+      const payload = lib.map((h) => ({
+        headId: h.headId,
+        section: h.section,
+        sub: h.sub,
+        items: h.items.map((it) => ({
+          ref: it.ref,
+          p: it.p,
+          req: it.req,
+          taskType: it.taskType,
+          contextDocKey: it.contextDocKey || '',
+          contextDocName: it.contextDocName || '',
+          contextDocSize: it.contextDocSize || 0,
+        })),
+      }));
       await api.library.save('audit', payload);
       toast('Library saved', 'success');
       setDirty(false);
@@ -153,11 +256,17 @@ export default function Library() {
             <h1 className="font-serif text-[32px] leading-[1.15] font-medium text-ink tracking-[-0.01em]">Task Library</h1>
             <div className="mt-3 h-px w-12 bg-green" />
           </div>
-          {canEdit && dirty && (
-            <div className="pt-1 shrink-0">
-              <Btn onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</Btn>
-            </div>
-          )}
+          <div className="pt-1 flex items-center gap-2 shrink-0">
+            {canEdit && !editMode && (
+              <Btn kind="ghost" onClick={() => setEditMode(true)}>Edit</Btn>
+            )}
+            {canEdit && editMode && (
+              <>
+                {dirty && <Btn onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</Btn>}
+                <Btn kind="ghost" onClick={() => setEditMode(false)}>Done editing</Btn>
+              </>
+            )}
+          </div>
         </div>
         <p className="text-sm text-slate-500 mt-3 max-w-2xl">
           The master checklist for every audit engagement — organised by category and sub-category.
@@ -167,9 +276,14 @@ export default function Library() {
           and classified by type: Document, Number, or Information.
           Updates here apply to all new engagements and roll-forwards.
         </p>
+        {editMode && (
+          <p className="text-xs text-amber-600 mt-2 bg-amber-50 border border-amber-200 rounded-md px-3 py-1.5 inline-block">
+            Editing mode active — changes apply to all new engagements and roll-forwards.
+          </p>
+        )}
       </header>
 
-      {canEdit && (
+      {canEdit && editMode && (
         <div className="bg-paper border border-tint rounded-xl p-4 mb-6 flex items-end gap-2">
           <label className="flex-1 text-xs font-medium text-slate-500">
             New category
@@ -199,7 +313,7 @@ export default function Library() {
             <div key={code} className="bg-paper border border-tint rounded-xl overflow-hidden">
               <div className="px-4 py-3 border-b border-tint flex items-center gap-2">
                 <button onClick={() => setCollapsed({ ...collapsed, [code]: !isC })} className="text-slate-300 text-xs w-4">{isC ? '▸' : '▾'}</button>
-                {canEdit ? (
+                {editMode ? (
                   <EditableText value={names[code] || code} onSave={(v) => renameCategory(code, v)} className="text-sm font-semibold text-ink flex-1" placeholder="Category name" />
                 ) : <span className="text-sm font-semibold text-ink flex-1 px-1.5 py-0.5">{names[code] || code}</span>}
                 <span className="text-xs text-slate-500 tabular-nums">
@@ -207,59 +321,84 @@ export default function Library() {
                   <span className="text-green">{heads.reduce((n, h) => n + h.items.filter((i) => i.req).length, 0)} client</span> ·{' '}
                   <span className="text-deep">{heads.reduce((n, h) => n + h.items.filter((i) => !i.req).length, 0)} team work</span>
                 </span>
-                {canEdit && <button onClick={() => removeCategory(code)} className="text-xs text-slate-400 hover:text-deep ml-2" title="Delete this category">Delete</button>}
+                {editMode && <button onClick={() => removeCategory(code)} className="text-xs text-slate-400 hover:text-deep ml-2" title="Delete this category">Delete</button>}
               </div>
               {!isC && (
                 <div className="p-3 space-y-3">
                   {heads.map((h) => (
                     <div key={h.id} className="border border-tint rounded-lg">
                       <div className="px-3 py-2 flex items-center gap-2 border-b border-tint bg-fog">
-                        {canEdit ? (
+                        {editMode ? (
                           <EditableText value={h.sub} onSave={(v) => renameHead(h.id, v)} className="text-sm font-medium text-ink flex-1" placeholder="Sub-category name" />
                         ) : <span className="text-sm font-medium text-ink flex-1 px-1.5 py-0.5">{h.sub}</span>}
                         <span className="text-xs text-slate-500 tabular-nums">
                           <span className="text-green">{h.items.filter((i) => i.req).length} client</span> ·{' '}
                           <span className="text-deep">{h.items.filter((i) => !i.req).length} team work</span>
                         </span>
-                        {canEdit && <button onClick={() => { if (confirm(`Delete sub-category "${h.sub}" and its tasks?`)) removeHead(h.id); }} className="text-xs text-deep hover:bg-fog rounded px-2 py-0.5">Delete</button>}
+                        {editMode && <button onClick={() => { if (confirm(`Delete sub-category "${h.sub}" and its tasks?`)) removeHead(h.id); }} className="text-xs text-deep hover:bg-fog rounded px-2 py-0.5">Delete</button>}
                       </div>
                       <div className="divide-y divide-tint/60">
                         {h.items.map((it, idx) => (
-                          <div key={idx} className="px-3 py-1.5 flex items-center gap-2">
-                            {canEdit ? (
-                              <>
-                                <EditableText value={it.ref} onSave={(v) => updateItem(h.id, idx, { ref: v })} mono className="text-xs text-slate-400 w-14" placeholder="ref" />
-                                <EditableText value={it.p} onSave={(v) => updateItem(h.id, idx, { p: v })} className="text-sm text-ink flex-1" placeholder="Task" />
-                              </>
-                            ) : (
-                              <>
-                                <span className="text-xs text-slate-400 w-14 font-mono px-1.5">{it.ref}</span>
-                                <span className="text-sm text-ink flex-1 px-1.5">{it.p}</span>
-                              </>
-                            )}
-                            {canEdit ? (
-                              <TaskTypeSelect value={it.taskType} onChange={(v) => updateItem(h.id, idx, { taskType: v })} />
-                            ) : (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded border border-tint text-slate-400 shrink-0">
-                                {(it.taskType || 'document').charAt(0).toUpperCase() + (it.taskType || 'document').slice(1)}
-                              </span>
-                            )}
-                            {canEdit ? (
-                              <div className="flex rounded-md border border-tint overflow-hidden text-[11px] shrink-0" role="group" aria-label="Who provides this">
-                                <button onClick={() => updateItem(h.id, idx, { req: true })} className={`px-2 py-1 ${it.req ? 'bg-green text-paper' : 'text-ink hover:bg-fog'}`} title="The client sends this to us">Client</button>
-                                <button onClick={() => updateItem(h.id, idx, { req: false })} className={`px-2 py-1 border-l border-tint ${!it.req ? 'bg-deep text-paper' : 'text-ink hover:bg-fog'}`} title="Our team performs this">Team work</button>
+                          <div key={idx} className="px-3 py-2 space-y-1.5">
+                            <div className="flex items-center gap-2">
+                              {editMode ? (
+                                <>
+                                  <EditableText value={it.ref} onSave={(v) => updateItem(h.id, idx, { ref: v })} mono className="text-xs text-slate-400 w-14" placeholder="ref" />
+                                  <EditableText value={it.p} onSave={(v) => updateItem(h.id, idx, { p: v })} className="text-sm text-ink flex-1" placeholder="Task" />
+                                </>
+                              ) : (
+                                <>
+                                  <span className="text-xs text-slate-400 w-14 font-mono px-1.5">{it.ref}</span>
+                                  <span className="text-sm text-ink flex-1 px-1.5">{it.p}</span>
+                                </>
+                              )}
+                              {editMode ? (
+                                <TaskTypeSelect value={it.taskType} onChange={(v) => updateItem(h.id, idx, { taskType: v })} />
+                              ) : (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded border border-tint text-slate-400 shrink-0">
+                                  {(it.taskType || 'document').charAt(0).toUpperCase() + (it.taskType || 'document').slice(1)}
+                                </span>
+                              )}
+                              {editMode ? (
+                                <div className="flex rounded-md border border-tint overflow-hidden text-[11px] shrink-0" role="group" aria-label="Who provides this">
+                                  <button onClick={() => updateItem(h.id, idx, { req: true })} className={`px-2 py-1 ${it.req ? 'bg-green text-paper' : 'text-ink hover:bg-fog'}`} title="The client sends this to us">Client</button>
+                                  <button onClick={() => updateItem(h.id, idx, { req: false })} className={`px-2 py-1 border-l border-tint ${!it.req ? 'bg-deep text-paper' : 'text-ink hover:bg-fog'}`} title="Our team performs this">Team work</button>
+                                </div>
+                              ) : (
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full border shrink-0 ${it.req ? 'text-green border-green' : 'text-deep border-deep'}`}>{it.req ? 'Client' : 'Team work'}</span>
+                              )}
+                              {editMode && (
+                                <ContextDocUpload
+                                  itemId={it.id}
+                                  editMode={editMode}
+                                  onUploaded={(doc) => setItemContextDoc(h.id, idx, {
+                                    contextDocKey: doc.contextDocKey,
+                                    contextDocName: doc.contextDocName,
+                                    contextDocSize: doc.contextDocSize,
+                                    contextDocUrl: doc.contextDocUrl,
+                                  })}
+                                />
+                              )}
+                              {editMode && <button onClick={() => removeItem(h.id, idx)} className="text-xs text-slate-300 hover:text-deep shrink-0">✕</button>}
+                            </div>
+                            {it.contextDocKey && (
+                              <div className="pl-16">
+                                <ContextDocChip
+                                  name={it.contextDocName}
+                                  size={it.contextDocSize}
+                                  url={it.contextDocUrl}
+                                  editMode={editMode}
+                                  onRemove={() => removeItemContextDoc(h.id, idx, it.id)}
+                                />
                               </div>
-                            ) : (
-                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full border shrink-0 ${it.req ? 'text-green border-green' : 'text-deep border-deep'}`}>{it.req ? 'Client' : 'Team work'}</span>
                             )}
-                            {canEdit && <button onClick={() => removeItem(h.id, idx)} className="text-xs text-slate-300 hover:text-deep shrink-0">✕</button>}
                           </div>
                         ))}
-                        {canEdit && <AddDoc onAdd={(p) => addItem(h.id, p)} />}
+                        {editMode && <AddDoc onAdd={(p) => addItem(h.id, p)} />}
                       </div>
                     </div>
                   ))}
-                  {canEdit && <AddSub onAdd={(sub) => addHead(code, sub)} />}
+                  {editMode && <AddSub onAdd={(sub) => addHead(code, sub)} />}
                 </div>
               )}
             </div>
