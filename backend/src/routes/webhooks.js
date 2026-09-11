@@ -142,9 +142,16 @@ router.post('/inbound-file', webhookAuth, async (req, res) => {
         console.error(`Inbound file: MinIO stat failed for key "${minioKey}":`, err.message);
 
         if (!isNotFound(err)) {
-          // Credentials, connectivity, bucket policy — not a timing problem.
+          // Credentials, connectivity, bucket policy, or a signature that did not survive the
+          // trip — not a timing problem. Surface the S3 error code verbatim: the message alone
+          // is ambiguous (MinIO reports a mangled-path signature failure and genuinely bad keys
+          // with similar wording), and guessing from it sends you down the wrong path.
           return res.status(502).json({
             error: `MinIO error while looking up "${minioKey}": ${err.message}`,
+            s3Code: err?.code ?? null,
+            httpStatus: err?.statusCode ?? null,
+            endpoint: `${process.env.MINIO_ENDPOINT}:${process.env.MINIO_PORT}`,
+            bucket: BUCKET,
           });
         }
 
