@@ -1593,11 +1593,8 @@ export default function EngagementDetail() {
             )}
           </div>
 
-          {/* Next step hint + filter controls */}
+          {/* Filter controls */}
           <div className="mt-1.5 flex items-center gap-3 text-xs text-slate-400">
-            {nextStep.action && isPartnerManager
-              ? <button onClick={() => doNext(nextStep.action)} className="hover:text-green hover:underline underline-offset-2">{nextStep.text}</button>
-              : <span>{nextStep.text}</span>}
             {(stageFilter || typeFilter !== 'all') && (
               <button onClick={() => { setStageFilter(null); setTypeFilter('all'); }} className="text-green hover:underline underline-offset-2">Clear filters</button>
             )}
