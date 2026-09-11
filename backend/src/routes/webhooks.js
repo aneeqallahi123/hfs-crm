@@ -11,7 +11,7 @@ function webhookAuth(req, res, next) {
   next();
 }
 
-const MAX_FILE_BYTES = parseInt(process.env.MAX_INBOX_FILE_MB || '50', 10) * 1024 * 1024;
+const MAX_FILE_BYTES = parseInt(process.env.MAX_INBOX_FILE_MB || '200', 10) * 1024 * 1024;
 
 // POST /api/webhooks/inbound-file
 // Called by n8n when Evolution API receives a WhatsApp file.
@@ -40,7 +40,7 @@ router.post('/inbound-file', webhookAuth, async (req, res) => {
     // File size guard
     if (buffer.length > MAX_FILE_BYTES) {
       return res.status(413).json({
-        error: `File exceeds limit (${Math.round(buffer.length / 1024 / 1024)}MB > ${process.env.MAX_INBOX_FILE_MB || 50}MB)`,
+        error: `File exceeds limit (${Math.round(buffer.length / 1024 / 1024)}MB > ${process.env.MAX_INBOX_FILE_MB || 200}MB)`,
       });
     }
 
