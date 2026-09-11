@@ -1450,19 +1450,19 @@ export default function EngagementDetail() {
           <div className="min-w-0">
             <h1 className="font-serif text-[32px] leading-[1.15] font-medium text-ink tracking-[-0.01em] truncate">{client?.name}</h1>
             <div className="mt-3 h-px w-12 bg-green" />
-            <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mt-1 text-sm text-slate-500">
-              <span>FY {engagement.year}</span>
+            <div className="flex items-center flex-wrap gap-2 mt-2">
+              <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">FY {engagement.year}</span>
               {engagement.rolledFrom && <span className="text-xs text-green bg-fog px-2 py-0.5 rounded-full">rolled forward</span>}
-              {phone && <span className="text-slate-400 text-xs">+{phone}</span>}
+              {phone && <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">+{phone}</span>}
               {engagement.deadline && (
-                <span className="text-xs text-slate-400">
+                <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
                   Due {engagement.deadline}
-                  {dueText && <span className={`ml-1 ${daysLeft < 0 && m.pct < 100 ? 'text-deep font-medium' : daysLeft <= 7 && m.pct < 100 ? 'text-green' : 'text-slate-400'}`}>({dueText})</span>}
+                  {dueText && <span className={`ml-1 font-medium ${daysLeft < 0 && m.pct < 100 ? 'text-deep' : daysLeft <= 7 && m.pct < 100 ? 'text-green' : 'text-slate-400'}`}>({dueText})</span>}
                 </span>
               )}
-              {engagement.incharge && <span className="text-xs text-slate-400">In-charge: {engagement.incharge}</span>}
+              {engagement.incharge && <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">In-charge: {engagement.incharge}</span>}
               {isPartnerManager && engagement.waGroupId && (
-                <span className="text-xs text-slate-400 truncate max-w-[200px]" title={engagement.waGroupId}>
+                <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full truncate max-w-[200px]" title={engagement.waGroupId}>
                   Group: <span className="font-mono">{engagement.waGroupId}</span>
                 </span>
               )}
