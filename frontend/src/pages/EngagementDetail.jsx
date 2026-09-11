@@ -1420,7 +1420,6 @@ export default function EngagementDetail() {
   const nextStep = (() => {
     if (libraryHeads.length > 0 && scopedIn.length === 0) return { text: 'Start by choosing which areas apply to this client.', action: 'scope' };
     if (stageCount.request) return { text: `${stageCount.request} request${stageCount.request > 1 ? "s haven't" : " hasn't"} been sent to the client yet.`, action: 'request' };
-if (stageCount.awaited) return { text: `Waiting on the client for ${stageCount.awaited} item${stageCount.awaited > 1 ? 's' : ''}. Send a reminder if it has been a while.`, action: 'followup' };
     if (stageCount.internal) return { text: `${stageCount.internal} item${stageCount.internal > 1 ? 's' : ''} left for the team.`, action: 'internal' };
     if (items.length === 0) return { text: 'Nothing here yet. Add a task below.', action: null };
     return { text: 'Everything for this client is complete.', action: null };
