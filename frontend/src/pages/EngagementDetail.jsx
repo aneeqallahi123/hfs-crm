@@ -1193,6 +1193,7 @@ export default function EngagementDetail() {
   const [team, setTeam] = useState([]);
   const [loading, setLoading] = useState(true);
   const [scoping, setScoping] = useState(false);
+  const [removeYearConfirm, setRemoveYearConfirm] = useState(false);
   const [compose, setCompose] = useState(null);
   const [collapsed, setCollapsed] = useState({});
   const [selecting, setSelecting] = useState(false);
@@ -1346,7 +1347,6 @@ export default function EngagementDetail() {
   }
 
   async function removeYear() {
-    if (!confirm(`Remove FY ${engagement.year} for ${client?.name || 'this client'}? Its ledger and files go; the client and other years stay.`)) return;
     try { await api.engagements.delete(id); toast(`FY ${engagement.year} removed`, 'info'); navigate('/'); }
     catch (err) { toast(err.message, 'error'); }
   }
@@ -1441,7 +1441,7 @@ export default function EngagementDetail() {
       <div className="mb-3 flex items-center justify-between">
         <button onClick={() => navigate('/')} className="text-xs text-slate-400 hover:text-slate-600">Back to overview</button>
         {user?.role === 'partner' && (
-          <button onClick={removeYear} className="text-xs text-slate-400 hover:text-deep" title="Delete this year for this client.">Remove this year</button>
+          <button onClick={() => setRemoveYearConfirm(true)} className="text-xs text-red-500 hover:text-red-700" title="Delete this year for this client.">Remove this year</button>
         )}
       </div>
 
@@ -1674,6 +1674,15 @@ export default function EngagementDetail() {
 
 
       {scoping && <ScopePanel orderedHeads={libraryHeads} setHeadIncluded={setHeadIncluded} updateItem={updateItem} onClose={() => setScoping(false)} engagementId={id} onReload={load} />}
+      {removeYearConfirm && (
+        <Modal title="Remove this year?" onClose={() => setRemoveYearConfirm(false)}>
+          <p className="text-sm text-slate-600 mb-6">Remove FY {engagement.year} for <strong>{client?.name || 'this client'}</strong>? Its ledger and files go; the client and other years stay.</p>
+          <div className="flex justify-end gap-3">
+            <button onClick={() => setRemoveYearConfirm(false)} className="px-4 py-2 text-sm rounded-md border border-stone-200 text-slate-600 hover:bg-stone-50">Cancel</button>
+            <button onClick={() => { setRemoveYearConfirm(false); removeYear(); }} className="px-4 py-2 text-sm rounded-md bg-red-600 text-white hover:bg-red-700">Remove</button>
+          </div>
+        </Modal>
+      )}
       {compose && (
         <ComposeModal
           compose={compose}
