@@ -429,56 +429,60 @@ function daysBetweenSafe(a, b) {
 function StudentDashboardBody({ rows, toast, reload }) {
   const { user } = useAuth();
   const [filter, setFilter] = useState('all');
+  const [expandedClients, setExpandedClients] = useState({});
   const navigate = useNavigate();
 
   const myRows = [];
-  let totalMine = 0, doneMine = 0;
-  const myEngs = [];
+  let doneMine = 0;
+  const myEngsByClient = {};
   for (const { e, client, items, m } of rows) {
-    let mineHere = false;
     let mineOpen = 0;
     for (const it of items) {
       if (!it.headIncluded || it.status === 'NA') continue;
       const owner = it.owner || e.incharge || '';
       if (owner !== user?.name) continue;
-      mineHere = true;
-      totalMine++;
       if (it.status === 'Completed') { doneMine++; continue; }
       mineOpen++;
       myRows.push({ e, client, it, tier: progressTier(it), age: noProgressDays(it), stage: stageOf(it) });
     }
-    if (mineHere || e.incharge === user?.name) myEngs.push({ e, client, m, mine: mineOpen });
+    const cid = e.clientId;
+    if (!myEngsByClient[cid]) myEngsByClient[cid] = { client, engs: [] };
+    myEngsByClient[cid].engs.push({ e, m, mine: mineOpen });
   }
+
   myRows.sort((a, b) => {
     const ra = a.tier ? RANK[a.tier] : 0, rb = b.tier ? RANK[b.tier] : 0;
     if (ra !== rb) return rb - ra;
     return (b.age || 0) - (a.age || 0);
   });
-  myEngs.sort((a, b) => b.mine - a.mine);
-  const myPct = totalMine ? Math.round((doneMine / totalMine) * 100) : 0;
+
   const stageCount = {};
   myRows.forEach((r) => { stageCount[r.stage] = (stageCount[r.stage] || 0) + 1; });
   const flaggedCount = myRows.filter((r) => !!r.tier).length;
+  const totalOpen = myRows.length;
+
+  const myClientGroups = Object.values(myEngsByClient).filter(
+    ({ engs }) => engs.some(({ e, mine }) => mine > 0 || e.incharge === user?.name)
+  );
+  myClientGroups.sort((a, b) => {
+    const ta = a.engs.reduce((s, x) => s + x.mine, 0);
+    const tb = b.engs.reduce((s, x) => s + x.mine, 0);
+    return tb - ta;
+  });
 
   const FILTERS = [
-    ['all', 'Everything', myRows.length],
+    ['all', 'All tasks', totalOpen],
+    ['internal', 'Not started', stageCount.internal || 0],
     ['request', 'To request', stageCount.request || 0],
     ['awaited', 'Awaited', stageCount.awaited || 0],
-    ['review', 'To review', stageCount.review || 0],
-    ['internal', 'Not started', stageCount.internal || 0],
     ['adhoc', 'Ad-hoc', stageCount.adhoc || 0],
+    ['completed', 'Completed', doneMine],
   ];
-  const filtered = filter === 'all' ? myRows : myRows.filter((r) => r.stage === filter);
-
-  async function complete(itemId) {
-    try {
-      await api.items.update(itemId, { status: 'Completed', statusSince: today() });
-      toast('Marked complete', 'success');
-      reload();
-    } catch (err) {
-      toast(err.message, 'error');
-    }
-  }
+  const filtered = filter === 'all'
+    ? myRows
+    : filter === 'completed'
+      ? [] // completed rows not in myRows; shown separately below
+      : myRows.filter((r) => r.stage === filter);
 
   const greeting = (() => {
     const h = new Date().getHours();
@@ -486,48 +490,74 @@ function StudentDashboardBody({ rows, toast, reload }) {
   })();
   const firstName = (user?.name || '').split(' ')[0];
 
+  function toggleClient(cid) {
+    setExpandedClients((prev) => ({ ...prev, [cid]: !prev[cid] }));
+  }
+
+  const currentFilterLabel = FILTERS.find(([k]) => k === filter)?.[1] ?? 'All tasks';
+
   return (
     <div className="stagger p-8 max-w-5xl">
-      <header className="mb-8 flex items-center gap-5">
-        {totalMine > 0 && <ProgressRing pct={myPct} />}
-        <div>
-          <h1 className="font-serif text-[30px] leading-none font-medium text-ink tracking-[-0.01em]">{greeting}, {firstName || 'there'}</h1>
-          <div className="mt-3 h-0.5 w-10 bg-green rounded-sm" />
-        </div>
+      <header className="mb-8">
+        <h1 className="font-serif text-[30px] leading-none font-medium text-ink tracking-[-0.01em]">{greeting}, {firstName || 'there'}</h1>
+        <div className="mt-3 h-0.5 w-10 bg-green rounded-sm" />
       </header>
 
-      {totalMine === 0 && myEngs.length === 0 ? (
+      {totalOpen === 0 && myClientGroups.length === 0 ? (
         <div className="bg-paper border border-tint rounded-2xl p-10 text-center">
           <h2 className="font-serif text-xl font-semibold text-deep mb-2">Nothing assigned to you yet</h2>
           <p className="text-sm text-slate-500">Once a manager or partner assigns a task to you — or makes you the in-charge — it will show up here.</p>
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-4 bg-fog rounded-xl border border-tint divide-x divide-tint mb-8">
-            <Stat label="To request" value={stageCount.request || 0} active={filter === 'request'} onClick={() => setFilter(filter === 'request' ? 'all' : 'request')} />
-            <Stat label="Awaited" value={stageCount.awaited || 0} active={filter === 'awaited'} onClick={() => setFilter(filter === 'awaited' ? 'all' : 'awaited')} />
-            <Stat label="To review" value={stageCount.review || 0} active={filter === 'review'} onClick={() => setFilter(filter === 'review' ? 'all' : 'review')} />
+          <div className="grid grid-cols-3 md:grid-cols-6 bg-fog rounded-xl border border-tint divide-x divide-tint mb-8">
+            <Stat label="Not started" value={stageCount.internal || 0} />
+            <Stat label="To request" value={stageCount.request || 0} />
+            <Stat label="Awaiting" value={stageCount.awaited || 0} />
+            <Stat label="To review" value={stageCount.review || 0} />
             <Stat label="Flagged" value={flaggedCount} />
+            <Stat label="Completed" value={doneMine} />
           </div>
 
-          {myEngs.length > 0 && (
+          {myClientGroups.length > 0 && (
             <section className="mb-8">
               <h2 className="font-serif text-lg font-medium text-ink mb-3">My clients</h2>
               <div className="bg-paper border border-tint rounded-xl divide-y divide-tint">
-                {myEngs.map(({ e, client, m, mine }) => {
-                  const h = healthOf(m);
+                {myClientGroups.map(({ client, engs }) => {
+                  const cid = engs[0]?.e.clientId;
+                  const isOpen = expandedClients[cid];
+                  const totalMineHere = engs.reduce((s, x) => s + x.mine, 0);
+                  const sortedEngs = engs.slice().sort((a, b) => (b.e.year > a.e.year ? 1 : -1));
                   return (
-                    <div key={e.id} onClick={() => navigate(`/engagements/${e.id}`)} className="px-4 py-3 flex items-center gap-3 hover:bg-fog cursor-pointer transition-colors">
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium text-ink truncate">
-                          {client?.name}
-                          <span className="ml-2 text-xs text-slate-400 font-normal">FY {e.year}</span>
-                          {e.incharge === user?.name && <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full border text-green border-green">in-charge</span>}
+                    <React.Fragment key={cid}>
+                      <div
+                        onClick={() => toggleClient(cid)}
+                        className={`px-4 py-3 flex items-center gap-3 cursor-pointer select-none transition-colors ${isOpen ? 'bg-fog' : 'hover:bg-fog/50'}`}
+                      >
+                        <span className={`shrink-0 w-4 h-4 rounded border border-tint flex items-center justify-center text-[8px] text-slate-400 transition-all duration-200 ${isOpen ? 'rotate-90 bg-tint' : 'bg-fog'}`}>▶</span>
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm font-medium text-ink truncate">{client?.name}</span>
+                          <span className="ml-2 text-[10px] text-slate-300">{engs.length} {engs.length === 1 ? 'yr' : 'yrs'}</span>
                         </div>
-                        <div className="text-xs text-slate-400">{mine} open task{mine === 1 ? '' : 's'} for you · {m.pct}% complete</div>
+                        <span className="text-xs text-slate-400 shrink-0">{totalMineHere} open task{totalMineHere === 1 ? '' : 's'}</span>
                       </div>
-                      <span className={`text-xs px-2 py-0.5 rounded-full border shrink-0 ${h.cls}`}>{h.label}</span>
-                    </div>
+                      {isOpen && sortedEngs.map(({ e, m, mine }, idx) => (
+                        <div
+                          key={e.id}
+                          onClick={() => navigate(`/engagements/${e.id}`)}
+                          className="pl-10 pr-4 py-2.5 flex items-center gap-3 hover:bg-fog/40 cursor-pointer transition-colors border-t border-tint/50"
+                          style={{ animation: 'slideDown .18s cubic-bezier(.2,.7,.2,1) both' }}
+                        >
+                          <span className="text-tint text-xs shrink-0">└</span>
+                          <div className="flex-1 min-w-0">
+                            <span className="text-sm text-slate-700 font-medium font-mono">FY {e.year}</span>
+                            {idx === 0 && <span className="ml-2 text-[9px] px-1.5 py-px rounded bg-tint text-green font-semibold tracking-[0.06em] uppercase">latest</span>}
+                            {e.incharge === user?.name && <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded-full border text-green border-green">in-charge</span>}
+                          </div>
+                          <span className="text-xs text-slate-400">{mine} open · {m.pct}% complete</span>
+                        </div>
+                      ))}
+                    </React.Fragment>
                   );
                 })}
               </div>
@@ -537,29 +567,34 @@ function StudentDashboardBody({ rows, toast, reload }) {
           <section>
             <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
               <h2 className="font-serif text-lg font-medium text-ink">My tasks</h2>
-              <div className="flex gap-1 flex-wrap">
-                {FILTERS.map(([k, l, n]) => (
-                  <button key={k} onClick={() => setFilter(k)} className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${filter === k ? 'bg-deep text-paper border-deep' : 'text-ink border-tint hover:bg-fog'}`}>
-                    {l} <span className={filter === k ? 'text-tint' : 'text-slate-400'}>{n}</span>
-                  </button>
-                ))}
+              <div className="relative">
+                <select
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value)}
+                  className="text-sm pl-3 pr-8 py-1.5 rounded-lg border border-tint bg-paper text-ink focus:outline-none focus:border-green appearance-none cursor-pointer"
+                >
+                  {FILTERS.map(([k, l, n]) => (
+                    <option key={k} value={k}>{l} ({n})</option>
+                  ))}
+                </select>
+                <svg className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
               </div>
             </div>
-            {filtered.length === 0 ? (
+            {filter === 'completed' ? (
+              <p className="text-sm text-slate-400 py-6 px-1">{doneMine} completed task{doneMine === 1 ? '' : 's'} — well done.</p>
+            ) : filtered.length === 0 ? (
               <p className="text-sm text-slate-400 py-6 px-1">Nothing here — you're caught up.</p>
             ) : (
               <div className="bg-paper border border-tint rounded-xl divide-y divide-tint">
                 {filtered.slice(0, 100).map((r) => (
-                  <div key={r.it.id} className={`pl-3 pr-4 py-2.5 flex items-center gap-3 hover:bg-fog border-l-4 ${edgeCls(r.tier)}`}>
-                    <div className="flex-1 min-w-0 cursor-pointer" onClick={() => navigate(`/engagements/${r.e.id}`)}>
+                  <div key={r.it.id} className={`pl-3 pr-4 py-2.5 flex items-center gap-3 hover:bg-fog border-l-4 ${edgeCls(r.tier)} cursor-pointer`} onClick={() => navigate(`/engagements/${r.e.id}`)}>
+                    <div className="flex-1 min-w-0">
                       <div className="text-sm text-ink truncate">{isAdhoc(r.it) ? 'Ad-hoc · ' : ''}{r.it.p}</div>
                       <div className="text-xs text-slate-400 truncate">{r.client?.name || 'Firm'} · FY{r.e.year} · {r.it.sub}{r.it.due ? ` · due ${r.it.due}` : ''}</div>
                     </div>
                     <span className={`text-xs px-2 py-0.5 rounded-full border shrink-0 ${statusStyle(r.it)}`}>{statusLabel(r.it)}</span>
-                    <span className="text-xs text-slate-400 tabular-nums w-14 text-right shrink-0">{r.age != null ? ageLabel(r.age) : '—'}</span>
-                    {(r.stage === 'review' || isAdhoc(r.it)) && (
-                      <button onClick={() => complete(r.it.id)} className="text-xs px-2 py-1 rounded-md text-green hover:bg-fog border border-tint shrink-0">Complete</button>
-                    )}
                   </div>
                 ))}
               </div>
