@@ -30,7 +30,6 @@ app.use(cors({
   origin: process.env.CORS_ORIGIN,
   credentials: true,
 }));
-app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
 
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100 });
@@ -38,13 +37,17 @@ const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100 });
 // that fetches lists on every navigation — same throttling behavior, more headroom.
 const apiLimiter  = rateLimit({ windowMs: 60 * 1000, max: 600 });
 
+// Webhook route gets its own body parser with a higher limit (must come before the global one)
+const webhookFileMb = parseInt(process.env.MAX_INBOX_FILE_MB || '200', 10) + 70; // base64 overhead ~33%
+app.use('/api/webhooks', express.json({ limit: `${webhookFileMb}mb` }), webhookRoutes);
+
+app.use(express.json({ limit: '10mb' }));
+
 // /auth/me and /auth/refresh are session-restore calls — use the lighter API limiter
 // Only login and logout need the strict auth limiter
 app.use('/api/auth/me', apiLimiter, authRoutes);
 app.use('/api/auth/refresh', apiLimiter, authRoutes);
 app.use('/api/auth', authLimiter, authRoutes);
-const webhookFileMb = parseInt(process.env.MAX_INBOX_FILE_MB || '200', 10) + 70; // base64 overhead ~33%
-app.use('/api/webhooks', express.json({ limit: `${webhookFileMb}mb` }), webhookRoutes); // webhook auth is its own shared-secret check, not JWT
 
 app.use('/api', apiLimiter, verifyToken);     // everything below requires JWT
 
