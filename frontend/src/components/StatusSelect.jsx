@@ -11,7 +11,7 @@ export default function StatusSelect({ it, onChange, className = '' }) {
       onChange={(e) => onChange(e.target.value)}
       onClick={(e) => e.stopPropagation()}
       title="Change status"
-      className={`text-[11px] rounded-full border pl-2.5 pr-6 py-0.5 focus:outline-none cursor-pointer shrink-0 appearance-none bg-no-repeat bg-[right_6px_center] ${statusStyle(it)} ${className}`}
+      className={`text-[11px] rounded-full border pl-2.5 pr-6 py-0.5 focus:outline-none cursor-pointer shrink-0 w-[6.5rem] appearance-none bg-no-repeat bg-[right_6px_center] ${statusStyle(it)} ${className}`}
       style={{ backgroundImage: CHEVRON }}
     >
       {statusOptions(it).map(([v, l]) => <option key={v} value={v}>{l}</option>)}

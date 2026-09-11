@@ -10,7 +10,7 @@ export default function OwnerSelect({ value, team, onChange, className = '' }) {
       onChange={(e) => onChange(e.target.value)}
       onClick={(e) => e.stopPropagation()}
       title={value ? `Owner: ${value} — click to reassign` : 'Assign to someone'}
-      className={`text-[11px] rounded-md pl-1.5 pr-4 py-0.5 cursor-pointer shrink-0 appearance-none bg-transparent bg-no-repeat bg-[right_2px_center] border border-transparent hover:border-tint focus:outline-none focus:border-green ${value ? 'text-slate-600' : 'text-slate-400 italic'} ${className}`}
+      className={`text-[11px] rounded-md pl-1.5 pr-4 py-0.5 cursor-pointer shrink-0 w-[5.5rem] appearance-none bg-transparent bg-no-repeat bg-[right_2px_center] border border-transparent hover:border-tint focus:outline-none focus:border-green ${value ? 'text-slate-600' : 'text-slate-400 italic'} ${className}`}
       style={{ backgroundImage: CHEVRON }}
     >
       <option value="">assign</option>
