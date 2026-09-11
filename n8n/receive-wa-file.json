@@ -51,6 +51,27 @@
     },
     {
       "parameters": {
+        "url": "http://evolution-api:8080/chat/getBase64FromMediaMessage/my-whatsapp",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "REPLACE_WITH_EVOLUTION_API_KEY" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ message: $json.body.data, convertToMp4: false }) }}",
+        "options": { "timeout": 30000 }
+      },
+      "name": "Evolution: Decrypt & Get Base64",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [850, 100],
+      "notes": "Evolution API decrypts the WhatsApp media encryption and returns the file as base64. This is required — the raw CDN URL contains encrypted bytes that cannot be opened directly. URL uses the Docker service name (evolution-api), matching the live n8n container's network — not localhost."
+    },
+    {
+      "parameters": {
         "url": "REPLACE_WITH_CRM_BACKEND_URL/api/webhooks/inbound-file",
         "sendHeaders": true,
         "headerParameters": {
@@ -61,14 +82,14 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ groupId: $json.body.data.key.remoteJid, sender: $json.body.data.key.participant || $json.body.data.key.remoteJid, messageId: $json.body.data.key.id, fileName: $json.body.data.message?.documentMessage?.fileName || $json.body.data.message?.imageMessage?.caption || ($json.body.data.messageType + '_' + $json.body.data.key.id), fileBase64: $json.body.data.message?.documentMessage?.base64 || $json.body.data.message?.imageMessage?.base64 || $json.body.data.message?.audioMessage?.base64 || $json.body.data.message?.videoMessage?.base64 || $json.body.data.message?.stickerMessage?.base64 || $json.body.data.message?.pttMessage?.base64, mimeType: $json.body.data.message?.documentMessage?.mimetype || $json.body.data.message?.imageMessage?.mimetype || $json.body.data.message?.audioMessage?.mimetype || $json.body.data.message?.videoMessage?.mimetype || $json.body.data.message?.stickerMessage?.mimetype || $json.body.data.message?.pttMessage?.mimetype || 'application/octet-stream' }) }}",
+        "jsonBody": "={{ JSON.stringify({ groupId: $('Filter: Groups Only').item.json.body.data.key.remoteJid, sender: $('Filter: Groups Only').item.json.body.data.key.participant || $('Filter: Groups Only').item.json.body.data.key.remoteJid, messageId: $('Filter: Groups Only').item.json.body.data.key.id, fileName: $('Filter: Groups Only').item.json.body.data.message?.documentMessage?.fileName || $('Filter: Groups Only').item.json.body.data.message?.imageMessage?.caption || ($('Filter: Groups Only').item.json.body.data.messageType + '_' + $('Filter: Groups Only').item.json.body.data.key.id), fileBase64: $json.base64, mimeType: $json.mimetype || $('Filter: Groups Only').item.json.body.data.message?.documentMessage?.mimetype || $('Filter: Groups Only').item.json.body.data.message?.imageMessage?.mimetype || 'application/octet-stream' }) }}",
         "options": { "timeout": 30000 }
       },
       "name": "POST to CRM Webhook",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [850, 100],
-      "notes": "Sends the decrypted file to the CRM backend as base64. With S3 storage enabled on Evolution API, the webhook payload already carries the decrypted 'base64' (and a presigned 'mediaUrl') on the message object — no separate getBase64FromMediaMessage call needed. Backend decodes → uploads to MinIO → inserts inbox_files row."
+      "position": [1050, 100],
+      "notes": "Sends decrypted file as base64 to the CRM backend. fileBase64/mimeType come from the 'Evolution: Decrypt & Get Base64' node's own response; everything else is read back from 'Filter: Groups Only' by node reference. Backend decodes → uploads to MinIO → inserts inbox_files row."
     },
     {
       "parameters": {
@@ -77,7 +98,7 @@
       "name": "Log Error",
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
-      "position": [1050, 200],
+      "position": [1250, 200],
       "notes": "No retry loop — the CRM webhook is idempotent (dedup by messageId). If it fails, review logs."
     }
   ],
@@ -91,6 +112,12 @@
     },
     "Filter: Groups Only": {
       "main": [
+        [{ "node": "Evolution: Decrypt & Get Base64", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Evolution: Decrypt & Get Base64": {
+      "main": [
         [{ "node": "POST to CRM Webhook", "type": "main", "index": 0 }],
         []
       ]
@@ -102,9 +129,9 @@
   "_meta": {
     "templateCredsSetupCompleted": false,
     "notes": [
-      "n8n Community Edition does not allow $env access inside node expressions — after importing, manually replace the 'POST to CRM Webhook' node's URL (REPLACE_WITH_CRM_BACKEND_URL/api/webhooks/inbound-file) and x-webhook-secret header value (REPLACE_WITH_WEBHOOK_SECRET) with the real production values. Never commit those real values back into this file.",
+      "n8n Community Edition does not allow $env access inside node expressions — after importing, manually replace: 'Evolution: Decrypt & Get Base64' node's apikey header (REPLACE_WITH_EVOLUTION_API_KEY), and 'POST to CRM Webhook' node's URL (REPLACE_WITH_CRM_BACKEND_URL/api/webhooks/inbound-file) and x-webhook-secret header value (REPLACE_WITH_WEBHOOK_SECRET) with the real production values. Never commit those real values back into this file.",
       "In Evolution API: set this workflow's webhook URL for event MESSAGES_UPSERT on your instance",
-      "Requires S3 storage enabled on Evolution API: it then decrypts inbound media itself and adds 'base64' (and a presigned 'mediaUrl') directly onto the message object in the webhook payload, so no separate getBase64FromMediaMessage call is needed here.",
+      "The Evolution API decrypt call (getBase64FromMediaMessage) is mandatory — WhatsApp CDN URLs contain encrypted bytes. Its URL uses the Docker service name 'evolution-api', matching how the n8n container reaches it on the local Mini PC.",
       "Evolution API delivers ALL group messages from ALL monitored groups — the CRM resolves the right engagement by groupId",
       "Files from groups not linked to any engagement are stored in unmatched_inbox for manual review"
     ]
