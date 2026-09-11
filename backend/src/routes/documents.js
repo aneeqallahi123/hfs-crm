@@ -1,11 +1,10 @@
 import { Router } from 'express';
-import multer from 'multer';
 import { pool } from '../db/pool.js';
 import { rbac } from '../middleware/rbac.js';
+import { upload } from '../middleware/upload.js';
 import { uploadFile, deleteFile, streamFile } from '../storage/minio.js';
 
 const router = Router();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 // POST /api/documents/upload
 router.post('/upload', (req, res, next) => {

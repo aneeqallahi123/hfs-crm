@@ -1,11 +1,10 @@
 import { Router } from 'express';
-import multer from 'multer';
 import { pool } from '../db/pool.js';
 import { rbac } from '../middleware/rbac.js';
+import { upload } from '../middleware/upload.js';
 import { minioClient, getPresignedUrl, deleteFile } from '../storage/minio.js';
 
 const BUCKET = process.env.MINIO_BUCKET;
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 const router = Router();
 

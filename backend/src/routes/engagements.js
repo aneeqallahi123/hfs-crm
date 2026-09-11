@@ -87,23 +87,33 @@ router.post('/', rbac('partner', 'manager'), async (req, res) => {
     );
     const eng = rows[0];
 
-    // Seed items from library for this module
+    // Seed items from library for this module — one round trip for all heads'
+    // items and one batched insert, instead of a query+insert pair per head.
     const { rows: heads } = await client.query(
       `SELECT * FROM library_heads WHERE module = $1 ORDER BY sort_order, head_id`,
       [module]
     );
-    for (const head of heads) {
+    if (heads.length) {
+      const headById = new Map(heads.map(h => [h.id, h]));
       const { rows: libItems } = await client.query(
-        `SELECT * FROM library_items WHERE head_id_fk = $1 ORDER BY sort_order, ref`,
-        [head.id]
+        `SELECT * FROM library_items WHERE head_id_fk = ANY($1)`,
+        [heads.map(h => h.id)]
       );
-      const included = defaultIncluded(head.section);
-      for (const it of libItems) {
+      if (libItems.length) {
+        const placeholders = [];
+        const params = [];
+        let i = 1;
+        for (const it of libItems) {
+          const head = headById.get(it.head_id_fk);
+          const included = defaultIncluded(head.section);
+          placeholders.push(`($${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, 'No progress')`);
+          params.push(eng.id, it.ref, head.section, head.head_id, head.sub, it.p, it.req, included, it.task_type || 'document');
+        }
         await client.query(
           `INSERT INTO items
              (engagement_id, ref, section, head_id, sub, p, requestable, head_included, kind, status)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'No progress')`,
-          [eng.id, it.ref, head.section, head.head_id, head.sub, it.p, it.req, included, it.task_type || 'document']
+           VALUES ${placeholders.join(', ')}`,
+          params
         );
       }
     }
@@ -229,21 +239,31 @@ router.post('/:id/roll-forward', rbac('partner', 'manager'), async (req, res) =>
       [src.module, src.client_id, newYear, src.incharge, src.contact_phone, src.wa_group_id, src.id]
     );
 
-    // Copy non-adhoc items, resetting status fields
+    // Copy non-adhoc items, resetting status fields — batched into one insert
+    // instead of one round trip per item.
     const { rows: srcItems } = await client.query(
       'SELECT * FROM items WHERE engagement_id = $1 AND adhoc = false',
       [src.id]
     );
 
-    for (const item of srcItems) {
+    if (srcItems.length) {
+      const placeholders = [];
+      const params = [];
+      let i = 1;
+      for (const item of srcItems) {
+        placeholders.push(
+          `($${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},'No progress','',0,'','','','',false,'',0,'','',false,'')`
+        );
+        params.push(newEng.id, item.ref, item.section, item.head_id, item.sub, item.p, item.kind,
+          item.value, item.requestable, item.head_included);
+      }
       await client.query(
         `INSERT INTO items
            (engagement_id, ref, section, head_id, sub, p, kind, value, requestable, head_included,
             status, status_since, peak, owner, file_note, date_requested, date_received,
             queried, date_queried, followups, last_contact, remarks, adhoc, due)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'No progress','',0,'','','','',false,'',0,'','',false,'')`,
-        [newEng.id, item.ref, item.section, item.head_id, item.sub, item.p, item.kind,
-         item.value, item.requestable, item.head_included]
+         VALUES ${placeholders.join(', ')}`,
+        params
       );
     }
 
