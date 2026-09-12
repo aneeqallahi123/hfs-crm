@@ -409,12 +409,16 @@ Every push to `main`:
 
 ## Cloudflare Setup
 
-> **URL normalization must stay OFF.** Rules → Settings → *Normalize incoming URLs* and
-> *Normalize URLs to origin* both disabled. Cloudflare otherwise rewrites percent-encoded paths
-> in transit, which breaks the AWS SigV4 signature on MinIO requests through the tunnel: objects
-> list and presign fine while per-object calls fail with `AccessDenied`, intermittently and
-> differently per edge location. This setting is not in the repo — rebuilding the zone would
-> silently reintroduce it.
+> **URL normalization is kept OFF** (Rules → Settings → *Normalize incoming URLs* and
+> *Normalize URLs to origin*). Cloudflare otherwise rewrites percent-encoded paths in transit,
+> which breaks the AWS SigV4 signature on MinIO requests through the tunnel — objects list and
+> presign fine while per-object calls fail with `AccessDenied`, intermittently and differently
+> per edge location.
+>
+> The CRM no longer depends on this: since inbound media is re-keyed onto plain-ASCII paths on
+> arrival (see below), no request it makes has anything left to normalize — the copy's exotic
+> source key travels in a header, and listings put the prefix in the query string. Leaving it
+> off is defence in depth, and it matters if you ever read Evolution's own keys directly.
 
 | Resource | Details |
 |----------|---------|
