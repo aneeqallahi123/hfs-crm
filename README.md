@@ -409,16 +409,18 @@ Every push to `main`:
 
 ## Cloudflare Setup
 
-> **URL normalization is kept OFF** (Rules → Settings → *Normalize incoming URLs* and
-> *Normalize URLs to origin*). Cloudflare otherwise rewrites percent-encoded paths in transit,
-> which breaks the AWS SigV4 signature on MinIO requests through the tunnel — objects list and
-> presign fine while per-object calls fail with `AccessDenied`, intermittently and differently
-> per edge location.
+> **Known issue: per-object MinIO calls through the tunnel are intermittently unreliable.**
+> `statObject`/`getObject` on `minio.hfccrm.org` fail with `AccessDenied` some of the time — the
+> same keys returned 4 ok / 16 fail and then 22 ok / 2 fail minutes apart from one client, and
+> Railway saw failures on keys a laptop fetched fine. Direct calls to `localhost:9000` always
+> worked. **The root cause was never established.** URL normalization (Rules → Settings) was
+> suspected and is off, but it was already off before the investigation, so it is not the cause.
 >
-> The CRM no longer depends on this: since inbound media is re-keyed onto plain-ASCII paths on
-> arrival (see below), no request it makes has anything left to normalize — the copy's exotic
-> source key travels in a header, and listings put the prefix in the query string. Leaving it
-> off is defence in depth, and it matters if you ever read Evolution's own keys directly.
+> The CRM works around this rather than relying on it: inbound media is re-keyed onto
+> plain-ASCII paths on arrival, object size comes from a prefix listing rather than `statObject`,
+> and downloads are presigned URLs the browser fetches. Listings and presigned URLs (query-string
+> auth) were reliable throughout; header-signed per-object calls were not. Keep that distinction
+> in mind before adding any new direct MinIO read from the backend.
 
 | Resource | Details |
 |----------|---------|
