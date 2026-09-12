@@ -260,6 +260,21 @@ function fmtShortDate(iso) {
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' });
 }
 
+function RemarksBox({ value, onSave }) {
+  const [v, setV] = React.useState(value);
+  React.useEffect(() => { setV(value); }, [value]);
+  return (
+    <textarea
+      value={v}
+      onChange={(e) => setV(e.target.value)}
+      onBlur={() => { if (v !== value) onSave(v); }}
+      placeholder="overall task remark…"
+      rows={4}
+      className="mt-1 w-full border border-tint rounded px-2.5 py-2 text-xs text-ink bg-paper focus:outline-none focus:border-green placeholder-slate-300 resize-y"
+    />
+  );
+}
+
 // ---- Task detail sidebar ----
 function TaskDetailSidebar({ it, team, canEdit, isStudent, onChange, engagementId, onRemove, itemFiles = [], onFileUploaded, onFileRemoved, onClose, onRemind }) {
   const toast = useToast();
@@ -369,6 +384,17 @@ function TaskDetailSidebar({ it, team, canEdit, isStudent, onChange, engagementI
 
         {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+
+          {/* Status selector */}
+          <div className="flex items-center gap-3">
+            <span className="text-[11px] text-slate-400 shrink-0">Status</span>
+            {canEdit
+              ? (isStudent
+                ? <StudentStatusSelect it={it} onChange={(v) => onChange(withStatus(it, v))} />
+                : <StatusSelect it={it} onChange={(v) => onChange(withStatus(it, v))} />)
+              : <span className={`text-[11px] rounded-full border px-2.5 py-0.5 ${statusStyle(it)}`}>{statusLabel(it)}</span>
+            }
+          </div>
 
           {/* Context documents */}
           <ContextDocSection it={it} canEdit={canEdit} onUpdate={onChange} />
@@ -522,8 +548,8 @@ function TaskDetailSidebar({ it, team, canEdit, isStudent, onChange, engagementI
           <div className="text-xs text-slate-500">
             Remarks
             {canEdit
-              ? <EditableText value={it.remarks || ''} onSave={(v) => onChange({ remarks: v })} placeholder="overall task remark…" className="w-full mt-0.5 text-xs" />
-              : <div className="mt-0.5 text-xs text-ink">{it.remarks || '—'}</div>}
+              ? <RemarksBox value={it.remarks || ''} onSave={(v) => onChange({ remarks: v })} />
+              : <div className="mt-1 text-xs text-ink whitespace-pre-wrap">{it.remarks || '—'}</div>}
           </div>
 
           {/* Due date */}
