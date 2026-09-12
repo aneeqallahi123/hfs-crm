@@ -245,7 +245,7 @@ export default function Clients() {
                   <React.Fragment key={c.id}>
                     {/* Client row */}
                     <tr
-                      className={`border-b border-tint/60 ${isEditing ? 'bg-fog/60' : 'hover:bg-fog/30 cursor-pointer'} transition-colors`}
+                      className={`group border-b border-tint/60 ${isEditing ? 'bg-fog/60' : 'hover:bg-fog/30 cursor-pointer'} transition-colors`}
                       onClick={() => !isEditing && navigate(`/clients/${c.id}`)}
                     >
                       {/* Expand toggle */}
