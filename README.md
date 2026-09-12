@@ -372,9 +372,24 @@ S3_REGION=us-east-1
    n8n rejects anything over ~12 MB with a 413 (`N8N_PAYLOAD_SIZE_MAX`, 16 MB default) before
    any node runs — the execution may not even appear in n8n's log.
 
+Inbound media is **re-keyed on arrival**: the webhook server-side-copies each object from
+Evolution's own key (which embeds the group JID and the sender's filename, so it routinely
+contains `@`, spaces and non-ASCII) onto the CRM's plain-ASCII convention,
+`{engagementId|unmatched}/{timestamp}-{random}.{ext}` — the same shape manual uploads use. The
+copy is internal to MinIO, so it costs nothing even at 200 MB. Evolution's originals stay under
+`evolution-api/`; expire them so files are not stored twice:
+
+```bash
+mc ilm rule add --expire-days 7 local/hfc-documents --prefix "evolution-api/"
+```
+
 ### n8n
 - Docker at `localhost:5678`
 - Recommended: `N8N_DEFAULT_BINARY_DATA_MODE=filesystem`
+- `N8N_PAYLOAD_SIZE_MAX=64` — the 16 MB default caps inbound files at ~12 MB whenever Evolution's
+  `webhookBase64` is on
+- `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` — workflows read `$env.CRM_BACKEND_URL` / `$env.WEBHOOK_SECRET`
+  rather than storing secrets in node values
 - Workflows imported from `n8n/` directory in this repo
 - `N8N_BLOCK_ENV_ACCESS_IN_NODE=false` is set, so `$env` **is** readable inside nodes. Workflows
   reference `$env.CRM_BACKEND_URL`, `$env.WEBHOOK_SECRET`, `$env.EVOLUTION_*` rather than
@@ -393,6 +408,13 @@ Every push to `main`:
 ---
 
 ## Cloudflare Setup
+
+> **URL normalization must stay OFF.** Rules → Settings → *Normalize incoming URLs* and
+> *Normalize URLs to origin* both disabled. Cloudflare otherwise rewrites percent-encoded paths
+> in transit, which breaks the AWS SigV4 signature on MinIO requests through the tunnel: objects
+> list and presign fine while per-object calls fail with `AccessDenied`, intermittently and
+> differently per edge location. This setting is not in the repo — rebuilding the zone would
+> silently reintroduce it.
 
 | Resource | Details |
 |----------|---------|
