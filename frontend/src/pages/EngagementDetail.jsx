@@ -757,7 +757,6 @@ function TaskDetailSidebar({ it, team, canEdit, isStudent, onChange, engagementI
             </div>
           )}
         </div>
-      </div>
     </div>
   );
 }
