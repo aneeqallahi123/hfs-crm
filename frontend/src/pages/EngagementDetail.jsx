@@ -1531,13 +1531,12 @@ export default function EngagementDetail() {
   const [files, setFiles] = useState([]);
   const [team, setTeam] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [scoping, setScoping] = useState(false);
   const [compose, setCompose] = useState(null);
   const [collapsed, setCollapsed] = useState({});
   const [selecting, setSelecting] = useState(false);
   const [sel, setSel] = useState({});
-  const [filesOpen, setFilesOpen] = useState(false);
-  const [stageFilter, setStageFilter] = useState(null);
+  const isNaSubPage = location.pathname.endsWith('/na');
+  const [stageFilter, setStageFilter] = useState(isNaSubPage ? 'na' : null);
   const [typeFilter, setTypeFilter] = useState('all');
   const [q, setQ] = useState('');
   const [editingDetails, setEditingDetails] = useState(false);
@@ -1769,7 +1768,7 @@ export default function EngagementDetail() {
   })();
 
   function doNext(action) {
-    if (action === 'scope') setScoping(true);
+    if (action === 'scope') navigate('scope');
     else if (action === 'request') startSelect((it) => it.headIncluded && it.requestable && it.status === 'No progress');
     else if (action === 'followup') startSelect((it) => owedToUs(it) && it.status === 'Requested');
     else if (action === 'review') setStageFilter('review');
@@ -1784,8 +1783,13 @@ export default function EngagementDetail() {
       {/* ── Left content column ── */}
       <div className={`flex-1 min-w-0 p-8 transition-all duration-300 ${sidebarTask ? 'max-w-[calc(100%-400px)]' : 'w-full'}`}>
       <div className="mb-3 flex items-center justify-between">
-        <button onClick={() => navigate(fromTasks ? '/tasks' : '/')} className="text-xs text-slate-400 hover:text-slate-600">{fromTasks ? 'Back to tasks' : 'Back to overview'}</button>
-        {user?.role === 'partner' && (
+        <button
+          onClick={() => navigate(isNaSubPage ? `/engagements/${id}` : fromTasks ? '/tasks' : '/')}
+          className="text-xs text-slate-400 hover:text-slate-600"
+        >
+          {isNaSubPage ? `← Back to ${client?.name || 'engagement'}` : fromTasks ? 'Back to tasks' : 'Back to overview'}
+        </button>
+        {user?.role === 'partner' && !isNaSubPage && (
           <button onClick={removeYear} className="text-xs text-slate-400 hover:text-deep" title="Delete this year for this client.">Remove this year</button>
         )}
       </div>
@@ -1814,7 +1818,7 @@ export default function EngagementDetail() {
             </div>
           </div>
           <div className="flex items-center gap-3 shrink-0">
-            {isPartnerManager && (
+            {isPartnerManager && !isNaSubPage && (
               <button
                 onClick={() => setEditingDetails(true)}
                 className="flex items-center gap-1.5 text-xs text-slate-500 border border-tint rounded-lg px-3 py-1.5 hover:border-green hover:text-green transition-colors"
@@ -1828,7 +1832,15 @@ export default function EngagementDetail() {
               </button>
             )}
             <div className="text-right">
-              <div className="font-mono text-[13px] text-slate-600 font-medium">{m.done} / {m.total} complete</div>
+              {dueText && m.pct < 100 && (
+                <div className={`text-sm font-semibold leading-tight ${daysLeft < 0 ? 'text-deep' : daysLeft <= 7 ? 'text-green' : 'text-ink'}`}>
+                  {daysLeft < 0 ? `${-daysLeft} day${daysLeft === -1 ? '' : 's'} overdue` : daysLeft === 0 ? 'Due today' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`}
+                </div>
+              )}
+              {engagement.deadline && m.pct < 100 && (
+                <div className="text-[11px] text-slate-400 leading-tight">due {engagement.deadline}</div>
+              )}
+              <div className="font-mono text-[12px] text-slate-500 font-medium mt-0.5">{m.done} / {m.total} complete</div>
             </div>
           </div>
         </div>
@@ -1861,12 +1873,15 @@ export default function EngagementDetail() {
         })}
         {/* Unmatched files KPI card */}
         <button
-          onClick={() => !isStudent && setFilesOpen(true)}
+          onClick={() => !isStudent && navigate('documents')}
           title={isStudent ? 'Unmatched files' : 'Files received but not yet matched to a task'}
           className={`text-left px-3 py-3 transition-colors ${!isStudent ? 'hover:bg-paper/60' : 'cursor-default'} ${unmatchedCount === 0 ? 'opacity-50' : ''}`}
         >
           <div className={`font-serif text-[24px] leading-none font-medium tabular-nums ${unmatchedCount > 0 ? 'text-deep' : 'text-ink'}`}>{unmatchedCount}</div>
-          <div className="text-[11px] text-slate-600 mt-1 leading-tight">Unmatched</div>
+          <div className="flex items-center gap-1 mt-1">
+            <div className="text-[11px] text-slate-600 leading-tight">Unmatched</div>
+            {!isStudent && <svg className="w-2.5 h-2.5 text-slate-400 shrink-0" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 5h6M5.5 2.5 8 5l-2.5 2.5"/></svg>}
+          </div>
         </button>
       </div>
 
@@ -1888,10 +1903,40 @@ export default function EngagementDetail() {
               </div>
             )}
 
+            {/* Activity */}
+            <button
+              onClick={() => navigate('activity')}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-600 border border-tint rounded-lg hover:bg-fog transition-colors"
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+              </svg>
+              Activity
+            </button>
+
             {/* Scope */}
             {libraryHeads.length > 0 && (
-              <button onClick={() => setScoping(true)} className="px-3 py-1.5 text-xs text-slate-600 border border-tint rounded-lg hover:bg-fog transition-colors">
+              <button
+                onClick={() => navigate('scope')}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-600 border border-tint rounded-lg hover:bg-fog transition-colors"
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
                 Scope
+              </button>
+            )}
+
+            {/* N/A tasks */}
+            {naCount > 0 && !isNaSubPage && (
+              <button
+                onClick={() => navigate('na')}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-500 border border-tint rounded-lg hover:bg-fog transition-colors"
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+                </svg>
+                {naCount} marked N/A
               </button>
             )}
 
@@ -1935,8 +1980,8 @@ export default function EngagementDetail() {
             {(stageFilter || typeFilter !== 'all') && (
               <button onClick={() => { setStageFilter(null); setTypeFilter('all'); }} className="text-green hover:underline underline-offset-2">Clear filters</button>
             )}
-            {naCount > 0 && stageFilter !== 'na' && (
-              <button onClick={() => setStageFilter('na')} className="hover:text-ink">{naCount} N/A</button>
+            {isNaSubPage && (
+              <span className="text-slate-500 font-medium">Showing N/A tasks only</span>
             )}
           </div>
         </div>
@@ -1949,7 +1994,7 @@ export default function EngagementDetail() {
         <div className="mb-4 border border-dashed border-tint rounded-xl p-6 text-center">
           <p className="text-sm text-ink">No areas scoped in yet.</p>
           <p className="text-xs text-slate-400 mt-1 mb-3">Choose which financial-statement areas apply to this client.</p>
-          {isPartnerManager && <Btn onClick={() => setScoping(true)}>Choose areas</Btn>}
+          {isPartnerManager && <Btn onClick={() => navigate('scope')}>Choose areas</Btn>}
         </div>
       )}
 
@@ -2011,7 +2056,6 @@ export default function EngagementDetail() {
       </section>
 
 
-      {scoping && <ScopePanel orderedHeads={libraryHeads} setHeadIncluded={setHeadIncluded} updateItem={updateItem} onClose={() => setScoping(false)} engagementId={id} onReload={load} />}
       {compose && (
         <ComposeModal
           compose={compose}
@@ -2020,16 +2064,6 @@ export default function EngagementDetail() {
           engagementId={id}
           onConfirm={confirmSend}
           onGroupSent={() => { setCompose(null); stopSelect(); load(); }}
-        />
-      )}
-      {filesOpen && (
-        <FilesModal
-          engagementId={id} files={files} heads={includedHeads} onClose={() => setFilesOpen(false)}
-          onAdd={addFiles} onMatch={matchFile} onUnmatch={unmatchFile} onRemove={removeFile} canDelete={canDeleteFiles}
-          onMarkIrrelevant={async (fileId, isIrrelevant) => {
-            try { await api.inbox.markIrrelevant(fileId, isIrrelevant); load(); }
-            catch (err) { toast(err.message, 'error'); }
-          }}
         />
       )}
       {editingDetails && (

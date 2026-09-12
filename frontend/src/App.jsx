@@ -8,6 +8,9 @@ import Dashboard from './pages/Dashboard.jsx';
 import Clients from './pages/Clients.jsx';
 import ClientDetail from './pages/ClientDetail.jsx';
 import EngagementDetail from './pages/EngagementDetail.jsx';
+import EngagementActivity from './pages/EngagementActivity.jsx';
+import EngagementScope from './pages/EngagementScope.jsx';
+import EngagementDocuments from './pages/EngagementDocuments.jsx';
 import Team from './pages/Team.jsx';
 import Person from './pages/Person.jsx';
 import PersonEdit from './pages/PersonEdit.jsx';
@@ -50,6 +53,10 @@ function AppRoutes() {
         <Route path="clients" element={<Clients />} />
         <Route path="clients/:id" element={<ClientDetail />} />
         <Route path="engagements/:id" element={<EngagementDetail />} />
+        <Route path="engagements/:id/activity" element={<EngagementActivity />} />
+        <Route path="engagements/:id/scope" element={<EngagementScope />} />
+        <Route path="engagements/:id/documents" element={<EngagementDocuments />} />
+        <Route path="engagements/:id/na" element={<EngagementDetail />} />
         <Route
           path="team"
           element={
