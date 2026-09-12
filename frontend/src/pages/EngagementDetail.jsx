@@ -498,11 +498,7 @@ function TaskDetailSidebar({ it, team, canEdit, isStudent, onChange, engagementI
   }
 
   return (
-    <>
-      {/* Backdrop */}
-      <div className="fixed inset-0 z-30" onClick={onClose} />
-      {/* Sidebar panel */}
-      <div className="fixed top-0 right-0 h-full w-[420px] max-w-[95vw] z-40 bg-paper border-l border-tint shadow-2xl flex flex-col overflow-hidden">
+    <div className="w-[400px] sticky top-0 h-screen bg-paper border-l border-tint shadow-xl flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-start gap-3 px-5 py-4 border-b border-tint shrink-0">
           <div className="flex-1 min-w-0">
@@ -762,7 +758,7 @@ function TaskDetailSidebar({ it, team, canEdit, isStudent, onChange, engagementI
           )}
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -1785,7 +1781,9 @@ export default function EngagementDetail() {
   const dueText = daysLeft == null ? '' : m.pct === 100 ? 'done' : daysLeft < 0 ? `overdue by ${-daysLeft} day${daysLeft === -1 ? '' : 's'}` : daysLeft === 0 ? 'due today' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`;
 
   return (
-    <div className="stagger p-8 max-w-4xl">
+    <div className="stagger flex min-h-screen items-start">
+      {/* ── Left content column ── */}
+      <div className={`flex-1 min-w-0 p-8 transition-all duration-300 ${sidebarTask ? 'max-w-[calc(100%-400px)]' : 'max-w-4xl'}`}>
       <div className="mb-3 flex items-center justify-between">
         <button onClick={() => navigate(fromTasks ? '/tasks' : '/')} className="text-xs text-slate-400 hover:text-slate-600">{fromTasks ? 'Back to tasks' : 'Back to overview'}</button>
         {user?.role === 'partner' && (
@@ -2042,32 +2040,37 @@ export default function EngagementDetail() {
           onClose={() => setEditingDetails(false)}
         />
       )}
-      {sidebarTask && (() => {
-        const sidebarIt = items.find(i => i.id === sidebarTask.id) || sidebarTask;
-        return (
-          <TaskDetailSidebar
-            it={sidebarIt}
-            team={team}
-            canEdit={canEdit}
-            isStudent={isStudent}
-            engagementId={id}
-            onChange={(patch) => { updateItem(sidebarIt.id, patch); setSidebarTask(prev => ({ ...prev, ...patch })); }}
-            onRemove={canEdit && isAdhoc(sidebarIt) ? () => { if (confirm(`Delete "${sidebarIt.p}"? The Activity log keeps a trace.`)) { removeItem(sidebarIt.id); setSidebarTask(null); } } : null}
-            itemFiles={files.filter(f => f.assignedItemId === sidebarIt.id)}
-            onFileUploaded={(file) => setFiles(prev => {
-              const existing = prev.find(f => f.id === file.id);
-              if (existing) return prev.map(f => f.id === file.id ? file : f);
-              return [...prev, file];
-            })}
-            onFileRemoved={(fileId) => setFiles(prev => prev.filter(f => f.id !== fileId))}
-            onClose={() => setSidebarTask(null)}
-            onRemind={() => {
-              const preview = composeMessage(engagement, client, [sidebarIt]);
-              setCompose({ items: [sidebarIt], ...preview });
-            }}
-          />
-        );
-      })()}
+      </div>{/* end left content column */}
+
+      {/* ── Right sidebar column (pushes content, not an overlay) ── */}
+      <div className={`shrink-0 transition-all duration-300 overflow-hidden ${sidebarTask ? 'w-[400px]' : 'w-0'}`}>
+        {sidebarTask && (() => {
+          const sidebarIt = items.find(i => i.id === sidebarTask.id) || sidebarTask;
+          return (
+            <TaskDetailSidebar
+              it={sidebarIt}
+              team={team}
+              canEdit={canEdit}
+              isStudent={isStudent}
+              engagementId={id}
+              onChange={(patch) => { updateItem(sidebarIt.id, patch); setSidebarTask(prev => ({ ...prev, ...patch })); }}
+              onRemove={canEdit && isAdhoc(sidebarIt) ? () => { if (confirm(`Delete "${sidebarIt.p}"? The Activity log keeps a trace.`)) { removeItem(sidebarIt.id); setSidebarTask(null); } } : null}
+              itemFiles={files.filter(f => f.assignedItemId === sidebarIt.id)}
+              onFileUploaded={(file) => setFiles(prev => {
+                const existing = prev.find(f => f.id === file.id);
+                if (existing) return prev.map(f => f.id === file.id ? file : f);
+                return [...prev, file];
+              })}
+              onFileRemoved={(fileId) => setFiles(prev => prev.filter(f => f.id !== fileId))}
+              onClose={() => setSidebarTask(null)}
+              onRemind={() => {
+                const preview = composeMessage(engagement, client, [sidebarIt]);
+                setCompose({ items: [sidebarIt], ...preview });
+              }}
+            />
+          );
+        })()}
+      </div>
     </div>
   );
 }
