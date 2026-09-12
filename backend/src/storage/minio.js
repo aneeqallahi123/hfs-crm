@@ -44,7 +44,6 @@ export const minioClient = {
   bucketExists: (...args) => getClient().bucketExists(...args),
   makeBucket: (...args) => getClient().makeBucket(...args),
   presignedGetObject: (...args) => getClient().presignedGetObject(...args),
-  statObject: (...args) => getClient().statObject(...args),
 };
 
 export async function ensureBucket() {
@@ -88,11 +87,20 @@ export async function getPresignedUrl(key, filename, contentType) {
   return getClient().presignedGetObject(BUCKET, key, 3600, reqParams);
 }
 
-// Returns { size, metaData, ... } for an object, or throws if it does not exist.
-// Used by the inbound webhook to confirm Evolution API really wrote the media
-// before a row claiming it exists is inserted.
-export async function statFile(key) {
-  return getClient().statObject(BUCKET, key);
+// Size via a prefix listing rather than statObject. HEAD on an individual object has proven
+// unreliable through the Cloudflare tunnel — it fails outright on some edges, and where it
+// succeeds the size comes from content-length, which Cloudflare rewrites for compressible
+// types (yielding NaN). Listing uses query-string auth and has been consistent on every route
+// and key shape. Returns null if the object is not found.
+export async function getObjectSize(key) {
+  const client = getClient();
+  return new Promise((resolve, reject) => {
+    let size = null;
+    const stream = client.listObjectsV2(BUCKET, key, false);
+    stream.on('data', (obj) => { if (obj?.name === key) size = obj.size; });
+    stream.on('error', reject);
+    stream.on('end', () => resolve(size));
+  });
 }
 
 export async function deleteFile(key) {

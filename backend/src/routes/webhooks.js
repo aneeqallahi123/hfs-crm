@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { pool } from '../db/pool.js';
-import { uploadFile, statFile, copyFile, buildObjectKey, MINIO_SDK_VERSION } from '../storage/minio.js';
+import { uploadFile, copyFile, buildObjectKey, getObjectSize, MINIO_SDK_VERSION } from '../storage/minio.js';
 
 const router = Router();
 
@@ -169,18 +169,17 @@ router.post('/inbound-file', webhookAuth, async (req, res) => {
       }
 
       // The copy succeeded, so the file is stored and this request will not fail from here on.
-      // The stat is only to record an accurate size, so treat it as best-effort: it can throw,
-      // and stat.size derives from content-length, which Cloudflare rewrites for compressible
-      // content, so even a successful HEAD can yield NaN. Fall back to the size the webhook
-      // reported, then to null, rather than losing the file or writing NaN into a bigint.
-      let stat = null;
+      // Size is recorded best-effort, in order of reliability: a prefix listing (consistent on
+      // every route), then the size the webhook reported, then 0. It must end up a number —
+      // inbox_files.size and unmatched_inbox.size are both NOT NULL.
+      let listedSize = null;
       try {
-        stat = await statFile(minioKey);
+        listedSize = await getObjectSize(minioKey);
       } catch (err) {
         console.warn(`Inbound file: size lookup failed for "${minioKey}" (file is stored):`, err.message);
       }
 
-      size = Number.isFinite(stat?.size) ? stat.size : (Number(reportedSize) || null);
+      size = Number.isFinite(listedSize) ? listedSize : (Number(reportedSize) || 0);
       if (size > MAX_FILE_BYTES) {
         return res.status(413).json({
           error: `File exceeds limit (${Math.round(size / 1024 / 1024)}MB > ${process.env.MAX_INBOX_FILE_MB || 200}MB)`,
