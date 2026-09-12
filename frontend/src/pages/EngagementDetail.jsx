@@ -327,7 +327,9 @@ function TaskDetailSidebar({ it, team, canEdit, isStudent, onChange, engagementI
       const res = await api.documents.upload(fd);
       const rawFile = res?.file;
       const done = it.status === 'Completed' || it.status === 'NA';
-      await onChange({ fileNote: file.name, status: done ? it.status : 'Under Review', queried: false });
+      const patch = { fileNote: file.name, status: done ? it.status : 'Under Review', queried: false };
+      if (!done && !it.dateReceived) patch.dateReceived = today();
+      await onChange(patch);
       if (rawFile && onFileUploaded) {
         onFileUploaded({
           id: rawFile.id, name: rawFile.name, size: rawFile.size, mimeType: rawFile.mime_type,
@@ -1483,7 +1485,9 @@ export default function EngagementDetail() {
       await api.inbox.assign(fileId, itemId, categoryName || '');
       const it = items.find((x) => x.id === itemId);
       if (it && it.status !== 'Completed' && it.status !== 'NA') {
-        await api.items.update(itemId, { status: 'Under Review', queried: false });
+        const patch = { status: 'Under Review', queried: false };
+        if (!it.dateReceived) patch.dateReceived = today();
+        await api.items.update(itemId, patch);
       }
       toast('File matched to task', 'success');
       load();
