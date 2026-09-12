@@ -3,6 +3,18 @@
 // the group JID (…/120363…@g.us/…). On v7 those objects list fine and serve fine via presigned
 // URL, but every statObject/getObject/removeObject on them fails 403.
 import * as Minio from 'minio';
+import { createRequire } from 'module';
+
+// Reported at startup and on lookup failures. v7 vs v8 changes how object paths are signed,
+// and a cached Docker layer can silently keep an old version installed despite package.json,
+// so the running version is worth stating rather than assuming.
+export const MINIO_SDK_VERSION = (() => {
+  try {
+    return createRequire(import.meta.url)('minio/package.json').version;
+  } catch {
+    return 'unknown';
+  }
+})();
 
 const BUCKET = process.env.MINIO_BUCKET;
 

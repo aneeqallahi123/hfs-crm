@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { pool } from '../db/pool.js';
-import { uploadFile, statFile } from '../storage/minio.js';
+import { uploadFile, statFile, MINIO_SDK_VERSION } from '../storage/minio.js';
 
 const router = Router();
 
@@ -152,6 +152,7 @@ router.post('/inbound-file', webhookAuth, async (req, res) => {
             httpStatus: err?.statusCode ?? null,
             endpoint: `${process.env.MINIO_ENDPOINT}:${process.env.MINIO_PORT}`,
             bucket: BUCKET,
+            minioSdk: MINIO_SDK_VERSION,
           });
         }
 

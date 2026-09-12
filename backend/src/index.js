@@ -18,7 +18,7 @@ import clientLibraryRoutes from './routes/client-library.js';
 import webhookRoutes from './routes/webhooks.js';
 import eventRoutes from './routes/events.js';
 import { verifyToken } from './middleware/auth.js';
-import { ensureBucket } from './storage/minio.js';
+import { ensureBucket, MINIO_SDK_VERSION } from './storage/minio.js';
 import { runMigrations, runAdminPasswordFix } from './db/migrate.js';
 
 const app = express();
@@ -76,7 +76,7 @@ runMigrations()
     console.warn('MinIO bucket check failed (non-fatal):', err.message);
   }))
   .then(() => {
-    app.listen(PORT, () => console.log(`HFC API running on port ${PORT}`));
+    app.listen(PORT, () => console.log(`HFC API running on port ${PORT} (minio sdk ${MINIO_SDK_VERSION}, endpoint ${process.env.MINIO_ENDPOINT})`));
   })
   .catch(err => {
     console.error('Startup failed:', err);
