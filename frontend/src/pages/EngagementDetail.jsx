@@ -1853,8 +1853,10 @@ export default function EngagementDetail() {
           return (
             <button key={key} onClick={handleKpiClick} title={isMessagingStage ? `Message client about ${label.toLowerCase()} items` : hint} className={`text-left px-3 py-3 transition-colors ${on ? 'bg-paper' : 'hover:bg-paper/60'} ${n === 0 ? 'opacity-50' : ''}`}>
               <div className={`font-serif text-[24px] leading-none font-medium tabular-nums ${on || key === 'complete' ? 'text-green' : 'text-ink'}`}>{n}</div>
-              <div className="text-[11px] text-slate-600 mt-1 leading-tight">{label}</div>
-              {isMessagingStage && n > 0 && <div className="text-[10px] text-slate-400 mt-0.5 leading-tight">Tap to message</div>}
+              <div className="flex items-center gap-1 mt-1">
+                <div className="text-[11px] text-slate-600 leading-tight">{label}</div>
+                {isMessagingStage && <svg className="w-2.5 h-2.5 text-slate-400 shrink-0" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 5h6M5.5 2.5 8 5l-2.5 2.5"/></svg>}
+              </div>
             </button>
           );
         })}
