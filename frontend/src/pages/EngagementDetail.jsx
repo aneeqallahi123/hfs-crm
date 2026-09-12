@@ -260,6 +260,138 @@ function fmtShortDate(iso) {
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' });
 }
 
+// Custom date picker — shows a styled inline calendar popover
+function DatePicker({ value, onChange, disabled }) {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef(null);
+
+  // Parse value (YYYY-MM-DD) or default to today for navigation
+  const parseVal = (v) => {
+    if (v) { const d = new Date(v + 'T00:00:00'); if (!isNaN(d)) return d; }
+    return null;
+  };
+  const selected = parseVal(value);
+  const [nav, setNav] = React.useState(() => selected || new Date());
+
+  React.useEffect(() => {
+    if (selected) setNav(new Date(selected.getFullYear(), selected.getMonth(), 1));
+  }, [value]);
+
+  // Close on outside click
+  React.useEffect(() => {
+    if (!open) return;
+    function handle(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, [open]);
+
+  const year = nav.getFullYear();
+  const month = nav.getMonth();
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const DAYS = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+
+  // Build grid: leading blanks + days of month
+  const firstDow = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < firstDow; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  function pick(day) {
+    if (!day) return;
+    const iso = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    onChange(iso);
+    setOpen(false);
+  }
+
+  function fmtDisplay(v) {
+    if (!v) return 'Set date';
+    const d = parseVal(v);
+    if (!d) return v;
+    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const selectedIso = value || '';
+
+  return (
+    <div className="relative inline-block" ref={ref}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => !disabled && setOpen(!open)}
+        className={`flex items-center gap-1.5 border border-tint rounded-lg px-2.5 py-1.5 text-xs transition-colors focus:outline-none
+          ${disabled ? 'opacity-50 cursor-default text-slate-400' : 'text-ink hover:border-green cursor-pointer'}
+          ${open ? 'border-green' : ''}
+          ${!value ? 'text-slate-400' : ''}`}
+      >
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+        </svg>
+        {fmtDisplay(value)}
+        {value && !disabled && (
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(e) => { e.stopPropagation(); onChange(''); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); onChange(''); } }}
+            className="ml-0.5 text-slate-300 hover:text-deep leading-none"
+            title="Clear"
+          >×</span>
+        )}
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full mt-1.5 z-50 bg-paper border border-tint rounded-xl shadow-xl p-3 w-[220px]">
+          {/* Month nav */}
+          <div className="flex items-center justify-between mb-2.5">
+            <button type="button" onClick={() => setNav(new Date(year, month - 1, 1))} className="w-6 h-6 flex items-center justify-center rounded hover:bg-fog text-slate-400 hover:text-ink transition-colors">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+            <span className="text-xs font-semibold text-ink">{MONTHS[month]} {year}</span>
+            <button type="button" onClick={() => setNav(new Date(year, month + 1, 1))} className="w-6 h-6 flex items-center justify-center rounded hover:bg-fog text-slate-400 hover:text-ink transition-colors">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+          </div>
+
+          {/* Day headers */}
+          <div className="grid grid-cols-7 mb-1">
+            {DAYS.map(d => (
+              <div key={d} className="text-center text-[10px] font-medium text-slate-400 py-0.5">{d}</div>
+            ))}
+          </div>
+
+          {/* Day cells */}
+          <div className="grid grid-cols-7 gap-y-0.5">
+            {cells.map((day, i) => {
+              if (!day) return <div key={`blank-${i}`} />;
+              const iso = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+              const isSelected = iso === selectedIso;
+              const isToday = iso === todayIso;
+              return (
+                <button
+                  key={iso}
+                  type="button"
+                  onClick={() => pick(day)}
+                  className={`w-full aspect-square flex items-center justify-center rounded-lg text-[11px] font-medium transition-colors
+                    ${isSelected ? 'bg-green text-paper' : isToday ? 'bg-green/10 text-green' : 'text-ink hover:bg-fog'}`}
+                >
+                  {day}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Today shortcut */}
+          <div className="border-t border-tint/50 mt-2.5 pt-2">
+            <button type="button" onClick={() => { onChange(todayIso); setOpen(false); }} className="w-full text-center text-[11px] text-green hover:underline underline-offset-2">Today</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RemarksBox({ value, onSave }) {
   const [v, setV] = React.useState(value);
   React.useEffect(() => { setV(value); }, [value]);
@@ -553,11 +685,9 @@ function TaskDetailSidebar({ it, team, canEdit, isStudent, onChange, engagementI
           </div>
 
           {/* Due date */}
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-500">
-            <label className="flex items-center gap-2">
-              Due
-              <input type="date" value={it.due || ''} disabled={!canEdit} onChange={(e) => onChange({ due: e.target.value })} className="border border-tint rounded px-2 py-1 text-xs text-ink focus:outline-none focus:border-green disabled:opacity-60" />
-            </label>
+          <div className="flex items-center gap-3 text-xs text-slate-500">
+            Due
+            <DatePicker value={it.due || ''} disabled={!canEdit} onChange={(v) => onChange({ due: v })} />
           </div>
 
           {/* The request */}
