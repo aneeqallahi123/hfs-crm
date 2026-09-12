@@ -523,6 +523,25 @@ function ItemRow({ it, team, canEdit, isStudent, onChange, engagementId, selectM
                   </button>
                 )
               )}
+
+              {/* Bound to fileInputRef so pressing Enter in the category-name field can open
+                  the picker. It has to live out here rather than inside the addingCategory
+                  branch above: that branch unmounts the moment Enter is handled, so a ref
+                  placed inside it is null exactly when it is needed. The category name rides
+                  on data-cat because the state is cleared before the picker opens. */}
+              {canEdit && (
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    const catName = e.target.getAttribute('data-cat') || '';
+                    e.target.value = '';
+                    if (f && catName) uploadFileForCategory(f, catName);
+                  }}
+                />
+              )}
             </div>
           )}
 
