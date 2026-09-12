@@ -4,7 +4,7 @@
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "hfs-receive-wa-file",
+        "path": "hfs-receive-wa-file-v2",
         "options": {}
       },
       "name": "Evolution API Webhook",
@@ -14,7 +14,7 @@
         250,
         300
       ],
-      "notes": "Configure this URL in Evolution API as the webhook for MESSAGES_UPSERT events on your instance. IMPORTANT: 'Webhook Base64' must be OFF in Evolution (Events -> Webhook). With it ON, Evolution embeds the whole file as base64 in this payload, and anything over ~12MB is rejected here by N8N_PAYLOAD_SIZE_MAX (16MB default) before a single node runs."
+      "notes": "Evolution API posts MESSAGES_UPSERT here. The path is -v2 because this workflow replaced an earlier one on 'hfs-receive-wa-file'; Evolution's webhook URL already points here, so the name is kept rather than renamed -- a path rename that misses Evolution fails silently (it posts into a 404: no execution, no error, files just vanish). IMPORTANT: 'Webhook Base64' must be OFF in Evolution (Events -> Webhook). With it ON the whole file arrives base64-encoded in this payload and n8n rejects anything over N8N_PAYLOAD_SIZE_MAX before a single node runs."
     },
     {
       "parameters": {
