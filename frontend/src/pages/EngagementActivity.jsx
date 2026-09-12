@@ -41,6 +41,13 @@ function hhmm(iso) {
   } catch { return ''; }
 }
 
+const FILTERS = [
+  { label: 'Today', key: 'today' },
+  { label: 'Last 7 days', key: '7d' },
+  { label: 'Last 30 days', key: '30d' },
+  { label: 'All', key: 'all' },
+];
+
 export default function EngagementActivity() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -49,6 +56,7 @@ export default function EngagementActivity() {
   const [client, setClient] = useState(null);
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('all');
   const td = today();
 
   useEffect(() => {
@@ -72,9 +80,17 @@ export default function EngagementActivity() {
 
   if (loading) return <div className="p-8 text-slate-400">Loading…</div>;
 
-  const sorted = [...events].reverse();
+  // events already arrive newest-first from the API
+  const filtered = events.filter((ev) => {
+    const n = daysBetween(ev.day, td);
+    if (filter === 'today')  return n === 0;
+    if (filter === '7d')     return n <= 6;
+    if (filter === '30d')    return n <= 29;
+    return true;
+  });
+
   const byDay = [];
-  for (const ev of sorted) {
+  for (const ev of filtered) {
     let g = byDay.find(x => x.day === ev.day);
     if (!g) { g = { day: ev.day, list: [] }; byDay.push(g); }
     g.list.push(ev);
@@ -112,10 +128,27 @@ export default function EngagementActivity() {
         <h1 className="font-serif text-[32px] leading-[1.15] font-medium text-ink tracking-[-0.01em]">Activity</h1>
         <div className="mt-3 h-px w-12 bg-green" />
         <p className="text-sm text-slate-500 mt-1">Who changed what, and when. Marked entries are the ones worth a second look.</p>
+        <div className="flex gap-1.5 mt-4">
+          {FILTERS.map((f) => (
+            <button
+              key={f.key}
+              onClick={() => setFilter(f.key)}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                filter === f.key
+                  ? 'bg-green text-white'
+                  : 'bg-fog border border-tint text-slate-500 hover:text-ink hover:border-slate-300'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
       </header>
 
-      {sorted.length === 0 ? (
-        <p className="text-sm text-slate-400 py-6 px-1">No activity recorded yet.</p>
+      {filtered.length === 0 ? (
+        <p className="text-sm text-slate-400 py-6 px-1">
+          {events.length === 0 ? 'No activity recorded yet.' : 'No activity in this period.'}
+        </p>
       ) : (
         <div className="bg-paper border border-tint rounded-xl overflow-hidden">
           {byDay.map((g) => (
