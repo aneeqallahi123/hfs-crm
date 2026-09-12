@@ -566,7 +566,7 @@ function ItemRow({ it, team, canEdit, isStudent, onChange, engagementId, selectM
             : <StatusSelect it={it} onChange={(v) => onChange(withStatus(it, v))} />)
           : <span className={`text-[11px] rounded-full border px-2.5 py-0.5 shrink-0 ${statusStyle(it)}`}>{statusLabel(it)}</span>
         }
-        <button onClick={() => onOpenSidebar && onOpenSidebar(it)} title="Details" className="text-slate-300 hover:text-slate-600 w-5 shrink-0 text-center">⋯</button>
+        <button onClick={() => onOpenSidebar && onOpenSidebar(it)} title="Details" className="text-slate-300 hover:text-slate-600 w-5 shrink-0 text-center">›</button>
       </div>
     </div>
   );
