@@ -1782,7 +1782,7 @@ export default function EngagementDetail() {
   return (
     <div className="stagger flex min-h-screen items-start">
       {/* ── Left content column ── */}
-      <div className={`flex-1 min-w-0 p-8 transition-all duration-300 ${sidebarTask ? 'max-w-[calc(100%-400px)]' : 'max-w-4xl'}`}>
+      <div className={`flex-1 min-w-0 p-8 transition-all duration-300 ${sidebarTask ? 'max-w-[calc(100%-400px)]' : 'w-full'}`}>
       <div className="mb-3 flex items-center justify-between">
         <button onClick={() => navigate(fromTasks ? '/tasks' : '/')} className="text-xs text-slate-400 hover:text-slate-600">{fromTasks ? 'Back to tasks' : 'Back to overview'}</button>
         {user?.role === 'partner' && (
