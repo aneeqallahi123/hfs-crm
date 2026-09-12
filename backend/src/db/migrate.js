@@ -179,6 +179,20 @@ export async function runMigrations() {
     END$$
   `);
 
+  // Backfill date_received for items that have files but no received date
+  await pool.query(`
+    UPDATE items i
+    SET date_received = sub.earliest
+    FROM (
+      SELECT assigned_item_id, MIN(uploaded_at)::DATE::TEXT AS earliest
+      FROM inbox_files
+      WHERE assigned_item_id IS NOT NULL AND uploaded_at IS NOT NULL
+      GROUP BY assigned_item_id
+    ) sub
+    WHERE i.id = sub.assigned_item_id
+      AND (i.date_received IS NULL OR i.date_received = '')
+  `);
+
   // Seed audit library if empty
   const { rows: existing } = await pool.query(
     `SELECT COUNT(*) AS cnt FROM library_heads WHERE module = 'audit'`
