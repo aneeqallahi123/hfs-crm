@@ -7,7 +7,7 @@ const router = Router();
 // GET /api/events?engagementId=...&clientId=...&type=...&day=...&limit=...
 router.get('/', rbac('partner', 'manager'), async (req, res) => {
   try {
-    const { engagementId, clientId, type, day, limit = 200 } = req.query;
+    const { engagementId, clientId, type, day, entityId, limit = 200 } = req.query;
     const conditions = [];
     const values = [];
     let i = 1;
@@ -16,6 +16,7 @@ router.get('/', rbac('partner', 'manager'), async (req, res) => {
     if (clientId)     { conditions.push(`client_id = $${i++}`);     values.push(clientId); }
     if (type)         { conditions.push(`type = $${i++}`);          values.push(type); }
     if (day)          { conditions.push(`day = $${i++}`);           values.push(day); }
+    if (entityId)     { conditions.push(`entity_id = $${i++}`);     values.push(entityId); }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     values.push(Math.min(parseInt(limit) || 200, 1000));

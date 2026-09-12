@@ -236,11 +236,41 @@ function ContextDocSection({ it, canEdit, onUpdate }) {
   );
 }
 
+function fmtEventLabel(ev) {
+  switch (ev.type) {
+    case 'item.status':    return `${ev.fromVal || '?'} → ${ev.toVal || '?'}`;
+    case 'item.owner':     return `assigned → ${ev.toVal || '—'}`;
+    case 'item.due':       return `due ${ev.fromVal || '?'} → ${ev.toVal || '?'}`;
+    case 'item.received_date': return `received ${ev.toVal || '—'}`;
+    case 'item.requestable':   return ev.toVal || '';
+    case 'item.added':     return 'task added';
+    case 'item.removed':   return 'task removed';
+    case 'item.reminder':  return 'reminder sent';
+    default:               return ev.toVal || ev.type;
+  }
+}
+
+function fmtShortDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' });
+}
+
 // ---- Task detail sidebar ----
 function TaskDetailSidebar({ it, team, canEdit, isStudent, onChange, engagementId, onRemove, itemFiles = [], onFileUploaded, onFileRemoved, onClose }) {
   const toast = useToast();
   const [downloading, setDownloading] = useState(null);
   const [removing, setRemoving] = useState(null);
+  const [changelog, setChangelog] = useState([]);
+  const [logLoading, setLogLoading] = useState(true);
+
+  React.useEffect(() => {
+    setLogLoading(true);
+    api.events.listForItem(it.id)
+      .then(evs => setChangelog(evs))
+      .catch(() => {})
+      .finally(() => setLogLoading(false));
+  }, [it.id]);
   const fileInputRef = React.useRef(null);
   const kind = it.kind || 'document';
   const isTextType = kind === 'number' || kind === 'information';
@@ -498,13 +528,60 @@ function TaskDetailSidebar({ it, team, canEdit, isStudent, onChange, engagementI
             </label>
           </div>
 
-          {/* Meta + delete */}
-          <div className="flex items-center gap-4 text-xs text-slate-400 pt-2 border-t border-tint/40">
-            {it.dateRequested && <span>Requested {it.dateRequested}</span>}
-            {it.followups > 0 && <span>{it.followups} reminder{it.followups > 1 ? 's' : ''}</span>}
-            <span className="flex-1" />
-            {onRemove && <button onClick={onRemove} className="text-slate-400 hover:text-deep">Delete task</button>}
+          {/* The request */}
+          <div className="border-t border-tint/40 pt-4">
+            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">The Request</p>
+            <div className="grid grid-cols-2 gap-y-1.5 text-xs">
+              <span className="text-slate-400">Requested</span>
+              <span className="text-ink">{it.dateRequested || '—'}</span>
+              <span className="text-slate-400">Received</span>
+              <span className="text-ink">{it.dateReceived || '—'}</span>
+            </div>
           </div>
+
+          {/* Reminders */}
+          <div className="border-t border-tint/40 pt-4">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5">Reminders</p>
+                {it.followups > 0 ? (
+                  <p className="text-xs text-ink">{it.followups} reminder{it.followups > 1 ? 's' : ''} sent</p>
+                ) : (
+                  <p className="text-xs text-slate-400">No reminders sent</p>
+                )}
+                {it.lastContact && (
+                  <p className="text-[11px] text-slate-400 mt-0.5">Last on {fmtShortDate(it.lastContact)}</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Change log */}
+          <div className="border-t border-tint/40 pt-4">
+            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Change Log</p>
+            {logLoading ? (
+              <p className="text-xs text-slate-400">Loading…</p>
+            ) : changelog.length === 0 ? (
+              <p className="text-xs text-slate-400">No activity recorded</p>
+            ) : (
+              <div className="space-y-0 divide-y divide-tint/30">
+                {changelog.map((ev) => (
+                  <div key={ev.id} className="flex items-start gap-3 py-2">
+                    <span className="text-[10px] text-slate-400 tabular-nums shrink-0 w-14 leading-tight pt-0.5">{fmtShortDate(ev.at)}</span>
+                    <span className="flex-1 text-xs text-ink leading-snug">{fmtEventLabel(ev)}</span>
+                    {ev.by && <span className="text-[10px] text-slate-400 shrink-0 max-w-[5rem] truncate">{ev.by.split(' ')[0]}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Delete */}
+          {onRemove && (
+            <div className="border-t border-tint/40 pt-3">
+              <button onClick={onRemove} className="text-xs text-slate-400 hover:text-deep">Delete task</button>
+            </div>
+          )}
         </div>
       </div>
     </>

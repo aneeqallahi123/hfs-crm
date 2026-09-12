@@ -121,6 +121,7 @@ export const api = {
   },
   events: {
     list: (params) => request('GET', `/events?${new URLSearchParams(params)}`),
+    listForItem: (itemId) => request('GET', `/events?${new URLSearchParams({ entityId: itemId, limit: 50 })}`).then(r => r?.events ?? []),
   },
   library: {
     get: (module = 'audit') => request('GET', `/library?module=${module}`).then(r => r?.library ?? r),
