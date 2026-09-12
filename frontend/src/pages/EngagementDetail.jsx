@@ -238,15 +238,19 @@ function ContextDocSection({ it, canEdit, onUpdate }) {
 
 function fmtEventLabel(ev) {
   switch (ev.type) {
-    case 'item.status':    return `${ev.fromVal || '?'} → ${ev.toVal || '?'}`;
-    case 'item.owner':     return `assigned → ${ev.toVal || '—'}`;
-    case 'item.due':       return `due ${ev.fromVal || '?'} → ${ev.toVal || '?'}`;
-    case 'item.received_date': return `received ${ev.toVal || '—'}`;
-    case 'item.requestable':   return ev.toVal || '';
-    case 'item.added':     return 'task added';
-    case 'item.removed':   return 'task removed';
-    case 'item.reminder':  return 'reminder sent';
-    default:               return ev.toVal || ev.type;
+    case 'item.status':        return `Status: ${ev.fromVal || '?'} → ${ev.toVal || '?'}`;
+    case 'item.owner':         return `Assigned to ${ev.toVal || '—'}`;
+    case 'item.due':           return `Due date: ${ev.fromVal || '?'} → ${ev.toVal || '?'}`;
+    case 'item.received_date': return `Date received set: ${ev.toVal || '—'}`;
+    case 'item.requestable':   return `Requestable: ${ev.toVal || ''}`;
+    case 'item.added':         return 'Task added';
+    case 'item.removed':       return 'Task removed';
+    case 'item.reminder':      return 'Reminder sent via WhatsApp';
+    case 'item.remarks':       return `Remarks updated`;
+    case 'item.file_matched':  return `File matched: ${ev.label || ev.toVal || '—'}`;
+    case 'item.file_uploaded': return `File uploaded: ${ev.label || ev.toVal || '—'}`;
+    case 'item.file_removed':  return `File removed`;
+    default:                   return ev.label || ev.type.replace(/^item\./, '').replace(/_/g, ' ');
   }
 }
 
@@ -257,7 +261,7 @@ function fmtShortDate(iso) {
 }
 
 // ---- Task detail sidebar ----
-function TaskDetailSidebar({ it, team, canEdit, isStudent, onChange, engagementId, onRemove, itemFiles = [], onFileUploaded, onFileRemoved, onClose }) {
+function TaskDetailSidebar({ it, team, canEdit, isStudent, onChange, engagementId, onRemove, itemFiles = [], onFileUploaded, onFileRemoved, onClose, onRemind }) {
   const toast = useToast();
   const [downloading, setDownloading] = useState(null);
   const [removing, setRemoving] = useState(null);
@@ -543,19 +547,33 @@ function TaskDetailSidebar({ it, team, canEdit, isStudent, onChange, engagementI
 
           {/* Reminders */}
           <div className="border-t border-tint/40 pt-4">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-0.5">Reminders</p>
-                {it.followups > 0 ? (
-                  <p className="text-xs text-ink">{it.followups} reminder{it.followups > 1 ? 's' : ''} sent</p>
-                ) : (
-                  <p className="text-xs text-slate-400">No reminders sent</p>
-                )}
-                {it.lastContact && (
-                  <p className="text-[11px] text-slate-400 mt-0.5">Last on {fmtShortDate(it.lastContact)}</p>
-                )}
-              </div>
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Reminders</p>
+              {onRemind && canEdit && (
+                <button
+                  onClick={onRemind}
+                  className="text-[11px] px-2 py-0.5 rounded bg-green/10 text-green hover:bg-green/20 font-medium transition-colors"
+                >
+                  Remind
+                </button>
+              )}
             </div>
+            {(() => {
+              const reminderEvents = changelog.filter(ev => ev.type === 'item.reminder');
+              if (logLoading) return <p className="text-xs text-slate-400">Loading…</p>;
+              if (reminderEvents.length === 0) return <p className="text-xs text-slate-400">No reminders sent</p>;
+              return (
+                <div className="space-y-0 divide-y divide-tint/30">
+                  {reminderEvents.map((ev) => (
+                    <div key={ev.id} className="flex items-center gap-3 py-1.5">
+                      <span className="text-[10px] text-slate-400 tabular-nums shrink-0 w-14">{fmtShortDate(ev.at)}</span>
+                      <span className="flex-1 text-xs text-ink">WhatsApp sent</span>
+                      {ev.by && <span className="text-[10px] text-slate-400 shrink-0">{ev.by.split(' ')[0]}</span>}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Change log */}
@@ -563,19 +581,21 @@ function TaskDetailSidebar({ it, team, canEdit, isStudent, onChange, engagementI
             <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Change Log</p>
             {logLoading ? (
               <p className="text-xs text-slate-400">Loading…</p>
-            ) : changelog.length === 0 ? (
-              <p className="text-xs text-slate-400">No activity recorded</p>
-            ) : (
-              <div className="space-y-0 divide-y divide-tint/30">
-                {changelog.map((ev) => (
-                  <div key={ev.id} className="flex items-start gap-3 py-2">
-                    <span className="text-[10px] text-slate-400 tabular-nums shrink-0 w-14 leading-tight pt-0.5">{fmtShortDate(ev.at)}</span>
-                    <span className="flex-1 text-xs text-ink leading-snug">{fmtEventLabel(ev)}</span>
-                    {ev.by && <span className="text-[10px] text-slate-400 shrink-0 max-w-[5rem] truncate">{ev.by.split(' ')[0]}</span>}
-                  </div>
-                ))}
-              </div>
-            )}
+            ) : (() => {
+              const logEntries = changelog.filter(ev => ev.type !== 'item.reminder');
+              if (logEntries.length === 0) return <p className="text-xs text-slate-400">No activity recorded</p>;
+              return (
+                <div className="space-y-0 divide-y divide-tint/30">
+                  {logEntries.map((ev) => (
+                    <div key={ev.id} className="flex items-start gap-3 py-2">
+                      <span className="text-[10px] text-slate-400 tabular-nums shrink-0 w-14 leading-tight pt-0.5">{fmtShortDate(ev.at)}</span>
+                      <span className="flex-1 text-xs text-ink leading-snug">{fmtEventLabel(ev)}</span>
+                      {ev.by && <span className="text-[10px] text-slate-400 shrink-0 max-w-[5rem] truncate">{ev.by.split(' ')[0]}</span>}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Delete */}
@@ -1895,6 +1915,10 @@ export default function EngagementDetail() {
             })}
             onFileRemoved={(fileId) => setFiles(prev => prev.filter(f => f.id !== fileId))}
             onClose={() => setSidebarTask(null)}
+            onRemind={() => {
+              const preview = composeMessage(engagement, client, [sidebarIt]);
+              setCompose({ items: [sidebarIt], ...preview });
+            }}
           />
         );
       })()}

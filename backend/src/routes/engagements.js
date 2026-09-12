@@ -333,25 +333,43 @@ router.post('/:id/whatsapp-message', rbac('partner', 'manager'), async (req, res
 
     for (const itemId of itemIds) {
       const { rows: [item] } = await pool.query(
-        'SELECT id, status, p, ref FROM items WHERE id = $1 AND engagement_id = $2',
+        'SELECT id, status, p, ref, followups FROM items WHERE id = $1 AND engagement_id = $2',
         [itemId, eng.id]
       );
-      if (!item || item.status === 'Requested') continue;
+      if (!item) continue;
 
-      const oldStatus = item.status;
-      await pool.query(
-        `UPDATE items SET status = 'Requested', status_since = $1, date_requested = $2, updated_at = NOW()
-         WHERE id = $3`,
-        [today, today, item.id]
-      );
+      const newFollowups = (item.followups || 0) + 1;
+
+      if (item.status !== 'Requested') {
+        const oldStatus = item.status;
+        await pool.query(
+          `UPDATE items SET status = 'Requested', status_since = $1, date_requested = $2,
+           followups = $3, last_contact = $4, updated_at = NOW() WHERE id = $5`,
+          [today, today, newFollowups, today, item.id]
+        );
+        await logEvent({
+          by: req.user.name, userId: req.user.sub, module: eng.module,
+          engagementId: eng.id, clientId: eng.client_id,
+          entity: 'item', entityId: item.id,
+          label: item.p || item.ref, type: 'item.status',
+          from: oldStatus, to: 'Requested',
+        });
+        updatedCount++;
+      } else {
+        await pool.query(
+          `UPDATE items SET followups = $1, last_contact = $2, updated_at = NOW() WHERE id = $3`,
+          [newFollowups, today, item.id]
+        );
+      }
+
+      // Always log a reminder event so the sidebar can show per-send dates
       await logEvent({
         by: req.user.name, userId: req.user.sub, module: eng.module,
         engagementId: eng.id, clientId: eng.client_id,
         entity: 'item', entityId: item.id,
-        label: item.p || item.ref, type: 'item.status',
-        from: oldStatus, to: 'Requested',
+        label: item.p || item.ref, type: 'item.reminder',
+        to: today,
       });
-      updatedCount++;
     }
 
     res.json({ sent: true, updatedCount });
