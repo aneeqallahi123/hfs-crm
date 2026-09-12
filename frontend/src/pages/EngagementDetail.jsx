@@ -1843,10 +1843,20 @@ export default function EngagementDetail() {
         {STAGES.map(([key, label, hint]) => {
           const n = stageCount[key] || 0;
           const on = stageFilter === key;
+          const isMessagingStage = canEdit && (key === 'request' || key === 'awaited');
+          function handleKpiClick() {
+            if (isMessagingStage) {
+              if (key === 'request') startSelect((it) => it.headIncluded && it.requestable && it.status === 'No progress');
+              else startSelect((it) => owedToUs(it) && it.status === 'Requested');
+            } else {
+              setStageFilter(on ? null : key);
+            }
+          }
           return (
-            <button key={key} onClick={() => setStageFilter(on ? null : key)} title={hint} className={`text-left px-3 py-3 transition-colors ${on ? 'bg-paper' : 'hover:bg-paper/60'} ${n === 0 ? 'opacity-50' : ''}`}>
+            <button key={key} onClick={handleKpiClick} title={isMessagingStage ? `Message client about ${label.toLowerCase()} items` : hint} className={`text-left px-3 py-3 transition-colors ${on ? 'bg-paper' : 'hover:bg-paper/60'} ${n === 0 ? 'opacity-50' : ''}`}>
               <div className={`font-serif text-[24px] leading-none font-medium tabular-nums ${on || key === 'complete' ? 'text-green' : 'text-ink'}`}>{n}</div>
               <div className="text-[11px] text-slate-600 mt-1 leading-tight">{label}</div>
+              {isMessagingStage && n > 0 && <div className="text-[10px] text-slate-400 mt-0.5 leading-tight">Tap to message</div>}
             </button>
           );
         })}
@@ -1866,37 +1876,17 @@ export default function EngagementDetail() {
           <div className="flex flex-wrap items-center gap-2">
 
             {/* Client messaging workflow */}
-            {selecting ? (
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className="flex items-stretch rounded-lg border border-tint overflow-hidden text-xs">
-                  <button onClick={stopSelect} className="px-3 py-1.5 text-slate-500 hover:bg-fog border-r border-tint transition-colors">Cancel</button>
-                  <button
-                    onClick={openCompose}
-                    disabled={messageable === 0}
-                    className={`px-3 py-1.5 font-medium transition-colors ${messageable > 0 ? 'bg-green text-paper hover:bg-deep' : 'text-slate-400 cursor-not-allowed bg-fog/40'}`}
-                  >
-                    Message{messageable > 0 ? <span className="ml-1.5 font-normal opacity-80 tabular-nums">{messageable}</span> : null}
-                  </button>
-                </div>
-                <div className="flex items-center gap-1 rounded-lg border border-tint bg-fog/40 px-2 py-1 text-xs">
-                  <span className="text-slate-400 mr-1">Select:</span>
-                  <button onClick={() => startSelect(owedToUs)} className="px-2 py-0.5 rounded text-green hover:bg-paper transition-colors">Everything owed</button>
-                  <span className="text-tint">|</span>
-                  <button onClick={() => startSelect((it) => it.headIncluded && it.requestable && it.status === 'No progress')} className="px-2 py-0.5 rounded text-slate-500 hover:text-ink hover:bg-paper transition-colors">Not yet requested</button>
-                  <span className="text-tint">|</span>
-                  <button onClick={() => startSelect((it) => owedToUs(it) && it.status === 'Requested')} className="px-2 py-0.5 rounded text-slate-500 hover:text-ink hover:bg-paper transition-colors">Awaited</button>
-                  <span className="text-tint">|</span>
-                  <button onClick={() => setSel({})} className="px-2 py-0.5 rounded text-slate-400 hover:text-ink hover:bg-paper transition-colors">Clear</button>
-                </div>
+            {selecting && (
+              <div className="flex items-stretch rounded-lg border border-tint overflow-hidden text-xs">
+                <button onClick={stopSelect} className="px-3 py-1.5 text-slate-500 hover:bg-fog border-r border-tint transition-colors">Cancel</button>
+                <button
+                  onClick={openCompose}
+                  disabled={messageable === 0}
+                  className={`px-3 py-1.5 font-medium transition-colors ${messageable > 0 ? 'bg-green text-paper hover:bg-deep' : 'text-slate-400 cursor-not-allowed bg-fog/40'}`}
+                >
+                  Message{messageable > 0 ? <span className="ml-1.5 font-normal opacity-80 tabular-nums">{messageable}</span> : null}
+                </button>
               </div>
-            ) : (
-              <button
-                onClick={() => startSelect(owedToUs)}
-                className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-ink border border-tint rounded-lg hover:border-green hover:text-green transition-colors"
-              >
-                Message client
-                {owed > 0 && <span className="text-[10px] font-normal text-slate-400 tabular-nums bg-fog px-1.5 py-0.5 rounded-full">{owed} pending</span>}
-              </button>
             )}
 
             {/* Scope */}
