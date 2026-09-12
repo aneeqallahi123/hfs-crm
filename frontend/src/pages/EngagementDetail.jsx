@@ -236,9 +236,8 @@ function ContextDocSection({ it, canEdit, onUpdate }) {
   );
 }
 
-// ---- Item row ----
-function ItemRow({ it, team, canEdit, isStudent, onChange, engagementId, selectMode, selected, onToggleSel, onRemove, itemFiles = [], onFileUploaded, onFileRemoved }) {
-  const [open, setOpen] = useState(false);
+// ---- Task detail sidebar ----
+function TaskDetailSidebar({ it, team, canEdit, isStudent, onChange, engagementId, onRemove, itemFiles = [], onFileUploaded, onFileRemoved, onClose }) {
   const toast = useToast();
   const [downloading, setDownloading] = useState(null);
   const [removing, setRemoving] = useState(null);
@@ -254,13 +253,7 @@ function ItemRow({ it, team, canEdit, isStudent, onChange, engagementId, selectM
     await onChange({ value: json });
   }
 
-  const isDone = it.status === 'Completed';
-  const fileCount = itemFiles.length;
-  const hasFiles = isTextType ? textVals.some((v) => v.trim()) : fileCount > 0;
-
-  function openFile(fileId) {
-    api.documents.open(fileId);
-  }
+  function openFile(fileId) { api.documents.open(fileId); }
 
   async function removeAttachedFile(fileId) {
     setRemoving(fileId);
@@ -269,14 +262,10 @@ function ItemRow({ it, team, canEdit, isStudent, onChange, engagementId, selectM
       if (onFileRemoved) onFileRemoved(fileId);
       const remaining = itemFiles.filter(f => f.id !== fileId);
       await onChange({ fileNote: remaining.length ? remaining[remaining.length - 1].name : '' });
-    } catch (err) {
-      toast(err.message, 'error');
-    } finally {
-      setRemoving(null);
-    }
+    } catch (err) { toast(err.message, 'error'); }
+    finally { setRemoving(null); }
   }
 
-  // Group files by categoryName
   const filesByCategory = (() => {
     const cats = {};
     for (const f of itemFiles) {
@@ -284,22 +273,18 @@ function ItemRow({ it, team, canEdit, isStudent, onChange, engagementId, selectM
       if (!cats[cat]) cats[cat] = [];
       cats[cat].push(f);
     }
-    // Sort each category chronologically
     for (const cat of Object.keys(cats)) {
       cats[cat].sort((a, b) => (a.uploadedAt ? new Date(a.uploadedAt).getTime() : 0) - (b.uploadedAt ? new Date(b.uploadedAt).getTime() : 0));
     }
     return cats;
   })();
   const categoryNames = Object.keys(filesByCategory).sort((a, b) => {
-    // named categories before empty
-    if (!a && b) return 1;
-    if (a && !b) return -1;
-    return a.localeCompare(b);
+    if (!a && b) return 1; if (a && !b) return -1; return a.localeCompare(b);
   });
 
   const [addingCategory, setAddingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
-  const [uploadingForCat, setUploadingForCat] = useState(null); // category name or '' for new
+  const [uploadingForCat, setUploadingForCat] = useState(null);
 
   async function uploadFileForCategory(file, categoryName) {
     setUploadingForCat(categoryName);
@@ -315,25 +300,227 @@ function ItemRow({ it, team, canEdit, isStudent, onChange, engagementId, selectM
       await onChange({ fileNote: file.name, status: done ? it.status : 'Under Review', queried: false });
       if (rawFile && onFileUploaded) {
         onFileUploaded({
-          id: rawFile.id,
-          name: rawFile.name,
-          size: rawFile.size,
-          mimeType: rawFile.mime_type,
-          uploadedAt: rawFile.uploaded_at,
-          assignedItemId: rawFile.assigned_item_id,
-          engagementId: rawFile.engagement_id,
-          status: rawFile.status,
+          id: rawFile.id, name: rawFile.name, size: rawFile.size, mimeType: rawFile.mime_type,
+          uploadedAt: rawFile.uploaded_at, assignedItemId: rawFile.assigned_item_id,
+          engagementId: rawFile.engagement_id, status: rawFile.status,
           categoryName: rawFile.category_name || categoryName,
         });
       }
       toast('File uploaded', 'success');
-    } catch (err) {
-      toast(err.message, 'error');
-    } finally {
+    } catch (err) { toast(err.message, 'error'); }
+    finally {
       setUploadingForCat(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   }
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div className="fixed inset-0 z-30" onClick={onClose} />
+      {/* Sidebar panel */}
+      <div className="fixed top-0 right-0 h-full w-[420px] max-w-[95vw] z-40 bg-paper border-l border-tint shadow-2xl flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="flex items-start gap-3 px-5 py-4 border-b border-tint shrink-0">
+          <div className="flex-1 min-w-0">
+            <p className="text-[11px] text-slate-400 uppercase tracking-wide mb-1">Task detail</p>
+            <h2 className="text-sm font-semibold text-ink leading-snug">{it.p}</h2>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-ink mt-0.5 shrink-0 w-6 h-6 flex items-center justify-center rounded hover:bg-fog transition-colors" title="Close">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+
+        {/* Scrollable body */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+
+          {/* Context documents */}
+          <ContextDocSection it={it} canEdit={canEdit} onUpdate={onChange} />
+
+          {/* Files / text values */}
+          {isTextType ? (
+            <div className="space-y-1.5">
+              {textVals.map((v, idx) => (
+                <div key={idx} className="flex items-center gap-1.5">
+                  {canEdit ? (
+                    <input
+                      type="text"
+                      inputMode={kind === 'number' ? 'decimal' : 'text'}
+                      value={v}
+                      onChange={(e) => { const n = [...textVals]; n[idx] = e.target.value; setTextVals(n); }}
+                      onBlur={() => saveTextVals(textVals)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                      placeholder={kind === 'number' ? 'Enter value…' : 'Enter information…'}
+                      className="flex-1 border border-tint rounded px-2.5 py-1.5 text-xs text-ink bg-paper focus:outline-none focus:border-green placeholder-slate-300"
+                    />
+                  ) : (
+                    <div className="flex-1 px-2.5 py-1.5 text-xs text-ink bg-fog rounded border border-tint">{v || '—'}</div>
+                  )}
+                  {canEdit && textVals.length > 1 && (
+                    <button onClick={() => { const n = textVals.filter((_, i) => i !== idx); setTextVals(n); saveTextVals(n); }} className="text-slate-300 hover:text-deep text-xs w-5 shrink-0" title="Remove this entry">✕</button>
+                  )}
+                </div>
+              ))}
+              {canEdit && (
+                <button onClick={() => setTextVals([...textVals, ''])} className="text-xs text-green hover:underline underline-offset-2">+ Add another value</button>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {categoryNames.length === 0 && !canEdit && (
+                <div className="text-xs text-slate-400">No files attached</div>
+              )}
+              {categoryNames.map((cat) => {
+                const catFiles = filesByCategory[cat];
+                const isUploadingThis = uploadingForCat === cat;
+                return (
+                  <div key={cat || '__uncategorised'} className="rounded-lg border border-tint overflow-hidden">
+                    <div className="flex items-center gap-2 px-2.5 py-1.5 bg-fog/50 border-b border-tint/60">
+                      <svg className="shrink-0 text-slate-400" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                      </svg>
+                      <span className="text-[11px] font-medium text-slate-600 flex-1 truncate">{cat || 'Uncategorised'}</span>
+                      <span className="text-[10px] text-slate-400 tabular-nums shrink-0">{catFiles.length} version{catFiles.length !== 1 ? 's' : ''}</span>
+                    </div>
+                    <div className="divide-y divide-tint/40">
+                      {catFiles.map((f, idx) => (
+                        <FileRow
+                          key={f.id} file={f} versionNum={idx + 1} canEdit={canEdit}
+                          downloading={downloading === f.id} removing={removing === f.id}
+                          onOpen={() => openFile(f.id)} onRemove={() => removeAttachedFile(f.id)}
+                          onNoteChange={(note) => { if (onFileUploaded) onFileUploaded({ ...f, note }); }}
+                        />
+                      ))}
+                    </div>
+                    {canEdit && (
+                      <label className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs cursor-pointer transition-colors border-t border-tint/40 ${isUploadingThis ? 'text-slate-400 cursor-wait' : 'text-slate-400 hover:text-green hover:bg-fog/40'}`}>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
+                        </svg>
+                        {isUploadingThis ? 'Uploading…' : '+ Add new version'}
+                        <input type="file" className="hidden" disabled={isUploadingThis} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFileForCategory(f, cat); e.target.value = ''; }} />
+                      </label>
+                    )}
+                  </div>
+                );
+              })}
+              {canEdit && (
+                addingCategory ? (
+                  <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-dashed border-tint bg-fog/20">
+                    <input
+                      autoFocus value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && newCategoryName.trim()) {
+                          const catName = newCategoryName.trim();
+                          setAddingCategory(false); setNewCategoryName('');
+                          if (fileInputRef.current) { fileInputRef.current.setAttribute('data-cat', catName); fileInputRef.current.click(); }
+                        }
+                        if (e.key === 'Escape') { setAddingCategory(false); setNewCategoryName(''); }
+                      }}
+                      placeholder="Category name, e.g. Bank statements…"
+                      className="flex-1 border border-tint rounded px-2 py-1 text-xs focus:outline-none focus:border-green"
+                    />
+                    <label className={`flex items-center gap-1 text-xs px-3 py-1 rounded border cursor-pointer transition-colors ${newCategoryName.trim() ? 'bg-green text-paper border-green hover:bg-deep' : 'text-slate-400 border-tint cursor-not-allowed'}`}>
+                      {uploadingForCat === newCategoryName.trim() ? 'Uploading…' : 'Choose file'}
+                      <input type="file" className="hidden"
+                        disabled={!newCategoryName.trim() || uploadingForCat === newCategoryName.trim()}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0]; const catName = newCategoryName.trim();
+                          if (f && catName) { setAddingCategory(false); setNewCategoryName(''); uploadFileForCategory(f, catName); }
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+                    <button onClick={() => { setAddingCategory(false); setNewCategoryName(''); }} className="text-xs text-slate-400 hover:text-ink px-2 py-1">Cancel</button>
+                  </div>
+                ) : (
+                  <button onClick={() => setAddingCategory(true)} className="w-full flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-dashed border-tint text-xs text-slate-400 hover:text-green hover:border-green transition-colors">
+                    <span>+</span>
+                    <span>{categoryNames.length === 0 ? 'Upload a file' : 'Add file category'}</span>
+                  </button>
+                )
+              )}
+            </div>
+          )}
+
+          {/* Task metadata */}
+          {!isStudent && (
+            <div className="grid grid-cols-3 gap-x-4 gap-y-3 pt-1">
+              <div className="text-xs text-slate-500">
+                Who provides this
+                <div className="mt-1 flex rounded border border-tint overflow-hidden text-[11px] w-fit">
+                  <button disabled={!canEdit} onClick={() => canEdit && onChange({ requestable: true })} className={`px-3 py-1 transition-colors ${it.requestable ? 'bg-green text-paper font-medium' : 'text-slate-500 hover:bg-fog disabled:cursor-default'}`}>Client</button>
+                  <button disabled={!canEdit} onClick={() => canEdit && onChange({ requestable: false })} className={`px-3 py-1 border-l border-tint transition-colors ${!it.requestable ? 'bg-deep text-paper font-medium' : 'text-slate-500 hover:bg-fog disabled:cursor-default'}`}>Team</button>
+                </div>
+              </div>
+              <div className="text-xs text-slate-500">
+                {canEdit ? (
+                  <>
+                    Type
+                    <div className="text-[10px] text-slate-400 mb-1">Override for this engagement</div>
+                    <select value={kind} onChange={(e) => onChange({ kind: e.target.value })} className="text-xs border border-tint rounded px-2 py-1 bg-paper focus:outline-none focus:border-green">
+                      <option value="document">Document</option>
+                      <option value="number">Number</option>
+                      <option value="information">Information</option>
+                    </select>
+                  </>
+                ) : (
+                  <>Type<div className="mt-0.5 text-xs text-ink capitalize">{kind}</div></>
+                )}
+              </div>
+              <div className="text-xs text-slate-500">
+                Secondary assignee
+                {canEdit ? (
+                  <select value={it.adHocOwner || ''} onChange={(e) => onChange({ adHocOwner: e.target.value })} className="mt-1 block text-xs border border-tint rounded px-2 py-1 bg-paper focus:outline-none focus:border-green">
+                    <option value="">None</option>
+                    {team.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
+                  </select>
+                ) : (
+                  <div className="mt-0.5 text-xs text-ink">{it.adHocOwner || '—'}</div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Remarks */}
+          <div className="text-xs text-slate-500">
+            Remarks
+            {canEdit
+              ? <EditableText value={it.remarks || ''} onSave={(v) => onChange({ remarks: v })} placeholder="overall task remark…" className="w-full mt-0.5 text-xs" />
+              : <div className="mt-0.5 text-xs text-ink">{it.remarks || '—'}</div>}
+          </div>
+
+          {/* Due date */}
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-500">
+            <label className="flex items-center gap-2">
+              Due
+              <input type="date" value={it.due || ''} disabled={!canEdit} onChange={(e) => onChange({ due: e.target.value })} className="border border-tint rounded px-2 py-1 text-xs text-ink focus:outline-none focus:border-green disabled:opacity-60" />
+            </label>
+          </div>
+
+          {/* Meta + delete */}
+          <div className="flex items-center gap-4 text-xs text-slate-400 pt-2 border-t border-tint/40">
+            {it.dateRequested && <span>Requested {it.dateRequested}</span>}
+            {it.followups > 0 && <span>{it.followups} reminder{it.followups > 1 ? 's' : ''}</span>}
+            <span className="flex-1" />
+            {onRemove && <button onClick={onRemove} className="text-slate-400 hover:text-deep">Delete task</button>}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ---- Item row ----
+function ItemRow({ it, team, canEdit, isStudent, onChange, engagementId, selectMode, selected, onToggleSel, onRemove, itemFiles = [], onFileUploaded, onFileRemoved, onOpenSidebar }) {
+  const kind = it.kind || 'document';
+  const isTextType = kind === 'number' || kind === 'information';
+  const [textVals, setTextVals] = useState(() => parseValues(it.value));
+  React.useEffect(() => { setTextVals(parseValues(it.value)); }, [it.value]);
+
+  const isDone = it.status === 'Completed';
+  const fileCount = itemFiles.length;
+  const hasFiles = isTextType ? textVals.some((v) => v.trim()) : fileCount > 0;
 
   return (
     <div className={`group pl-3 pr-4 py-2 border-l-4 border-transparent ${it.status === 'NA' ? 'opacity-40' : ''} ${selected ? 'bg-fog/60' : ''} transition-colors`}>
@@ -379,255 +566,8 @@ function ItemRow({ it, team, canEdit, isStudent, onChange, engagementId, selectM
             : <StatusSelect it={it} onChange={(v) => onChange(withStatus(it, v))} />)
           : <span className={`text-[11px] rounded-full border px-2.5 py-0.5 shrink-0 ${statusStyle(it)}`}>{statusLabel(it)}</span>
         }
-        <button onClick={() => setOpen(!open)} title="Details" className="text-slate-300 hover:text-slate-600 w-5 shrink-0 text-center">{open ? '▾' : '⋯'}</button>
+        <button onClick={() => onOpenSidebar && onOpenSidebar(it)} title="Details" className="text-slate-300 hover:text-slate-600 w-5 shrink-0 text-center">›</button>
       </div>
-
-      {open && (
-        <div className="mt-2 pb-1 space-y-3" style={{ paddingLeft: '2rem' }}>
-
-          {/* ── Context documents ────────────────────────────────── */}
-          <ContextDocSection it={it} canEdit={canEdit} onUpdate={onChange} />
-
-          {/* ── Files (by category with versioning) or text values ── */}
-          {isTextType ? (
-            <div className="space-y-1.5">
-              {textVals.map((v, idx) => (
-                <div key={idx} className="flex items-center gap-1.5">
-                  {canEdit ? (
-                    <input
-                      type="text"
-                      inputMode={kind === 'number' ? 'decimal' : 'text'}
-                      value={v}
-                      onChange={(e) => { const n = [...textVals]; n[idx] = e.target.value; setTextVals(n); }}
-                      onBlur={() => saveTextVals(textVals)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-                      placeholder={kind === 'number' ? 'Enter value…' : 'Enter information…'}
-                      className="flex-1 border border-tint rounded px-2.5 py-1.5 text-xs text-ink bg-paper focus:outline-none focus:border-green placeholder-slate-300"
-                    />
-                  ) : (
-                    <div className="flex-1 px-2.5 py-1.5 text-xs text-ink bg-fog rounded border border-tint">{v || '—'}</div>
-                  )}
-                  {canEdit && textVals.length > 1 && (
-                    <button
-                      onClick={() => { const n = textVals.filter((_, i) => i !== idx); setTextVals(n); saveTextVals(n); }}
-                      className="text-slate-300 hover:text-deep text-xs w-5 shrink-0"
-                      title="Remove this entry"
-                    >✕</button>
-                  )}
-                </div>
-              ))}
-              {canEdit && (
-                <button
-                  onClick={() => setTextVals([...textVals, ''])}
-                  className="text-xs text-green hover:underline underline-offset-2"
-                >+ Add another value</button>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {categoryNames.length === 0 && !canEdit && (
-                <div className="text-xs text-slate-400">No files attached</div>
-              )}
-              {categoryNames.map((cat) => {
-                const catFiles = filesByCategory[cat];
-                const isUploadingThis = uploadingForCat === cat;
-                return (
-                  <div key={cat || '__uncategorised'} className="rounded-lg border border-tint overflow-hidden">
-                    {/* Category header */}
-                    <div className="flex items-center gap-2 px-2.5 py-1.5 bg-fog/50 border-b border-tint/60">
-                      <svg className="shrink-0 text-slate-400" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-                      </svg>
-                      <span className="text-[11px] font-medium text-slate-600 flex-1 truncate">{cat || 'Uncategorised'}</span>
-                      <span className="text-[10px] text-slate-400 tabular-nums shrink-0">{catFiles.length} version{catFiles.length !== 1 ? 's' : ''}</span>
-                    </div>
-                    {/* Versions */}
-                    <div className="divide-y divide-tint/40">
-                      {catFiles.map((f, idx) => (
-                        <FileRow
-                          key={f.id}
-                          file={f}
-                          versionNum={idx + 1}
-                          canEdit={canEdit}
-                          downloading={downloading === f.id}
-                          removing={removing === f.id}
-                          onOpen={() => openFile(f.id)}
-                          onRemove={() => removeAttachedFile(f.id)}
-                          onNoteChange={(note) => {
-                            if (onFileUploaded) onFileUploaded({ ...f, note });
-                          }}
-                        />
-                      ))}
-                    </div>
-                    {/* Add new version to this category */}
-                    {canEdit && (
-                      <label className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs cursor-pointer transition-colors border-t border-tint/40 ${isUploadingThis ? 'text-slate-400 cursor-wait' : 'text-slate-400 hover:text-green hover:bg-fog/40'}`}>
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
-                        </svg>
-                        {isUploadingThis ? 'Uploading…' : '+ Add new version'}
-                        <input type="file" className="hidden" disabled={isUploadingThis} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFileForCategory(f, cat); e.target.value = ''; }} />
-                      </label>
-                    )}
-                  </div>
-                );
-              })}
-
-              {/* Add new file category */}
-              {canEdit && (
-                addingCategory ? (
-                  <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg border border-dashed border-tint bg-fog/20">
-                    <input
-                      autoFocus
-                      value={newCategoryName}
-                      onChange={(e) => setNewCategoryName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && newCategoryName.trim()) {
-                          const catName = newCategoryName.trim();
-                          setAddingCategory(false);
-                          setNewCategoryName('');
-                          if (fileInputRef.current) { fileInputRef.current.setAttribute('data-cat', catName); fileInputRef.current.click(); }
-                        }
-                        if (e.key === 'Escape') { setAddingCategory(false); setNewCategoryName(''); }
-                      }}
-                      placeholder="Category name, e.g. Bank statements…"
-                      className="flex-1 border border-tint rounded px-2 py-1 text-xs focus:outline-none focus:border-green"
-                    />
-                    <label className={`flex items-center gap-1 text-xs px-3 py-1 rounded border cursor-pointer transition-colors ${newCategoryName.trim() ? 'bg-green text-paper border-green hover:bg-deep' : 'text-slate-400 border-tint cursor-not-allowed'}`}>
-                      {uploadingForCat === newCategoryName.trim() ? 'Uploading…' : 'Choose file'}
-                      <input
-                        type="file"
-                        className="hidden"
-                        disabled={!newCategoryName.trim() || uploadingForCat === newCategoryName.trim()}
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          const catName = newCategoryName.trim();
-                          if (f && catName) {
-                            setAddingCategory(false);
-                            setNewCategoryName('');
-                            uploadFileForCategory(f, catName);
-                          }
-                          e.target.value = '';
-                        }}
-                      />
-                    </label>
-                    <button onClick={() => { setAddingCategory(false); setNewCategoryName(''); }} className="text-xs text-slate-400 hover:text-ink px-2 py-1">Cancel</button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => setAddingCategory(true)}
-                    className="w-full flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-dashed border-tint text-xs text-slate-400 hover:text-green hover:border-green transition-colors"
-                  >
-                    <span>+</span>
-                    <span>{categoryNames.length === 0 ? 'Upload a file' : 'Add file category'}</span>
-                  </button>
-                )
-              )}
-
-              {/* Bound to fileInputRef so pressing Enter in the category-name field can open
-                  the picker. It has to live out here rather than inside the addingCategory
-                  branch above: that branch unmounts the moment Enter is handled, so a ref
-                  placed inside it is null exactly when it is needed. The category name rides
-                  on data-cat because the state is cleared before the picker opens. */}
-              {canEdit && (
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    const catName = e.target.getAttribute('data-cat') || '';
-                    e.target.value = '';
-                    if (f && catName) uploadFileForCategory(f, catName);
-                  }}
-                />
-              )}
-            </div>
-          )}
-
-          {/* ── Task metadata grid ────────────────────────────────── */}
-          {!isStudent && <div className="grid grid-cols-3 gap-x-4 gap-y-3 pt-1">
-            <div className="text-xs text-slate-500">
-              Who provides this
-              <div className="mt-1 flex rounded border border-tint overflow-hidden text-[11px] w-fit">
-                <button
-                  disabled={!canEdit}
-                  onClick={() => canEdit && onChange({ requestable: true })}
-                  className={`px-3 py-1 transition-colors ${it.requestable ? 'bg-green text-paper font-medium' : 'text-slate-500 hover:bg-fog disabled:cursor-default'}`}
-                >Client</button>
-                <button
-                  disabled={!canEdit}
-                  onClick={() => canEdit && onChange({ requestable: false })}
-                  className={`px-3 py-1 border-l border-tint transition-colors ${!it.requestable ? 'bg-deep text-paper font-medium' : 'text-slate-500 hover:bg-fog disabled:cursor-default'}`}
-                >Team</button>
-              </div>
-            </div>
-            <div className="text-xs text-slate-500">
-              {canEdit ? (
-                <>
-                  Type
-                  <div className="text-[10px] text-slate-400 mb-1">Override for this engagement</div>
-                  <select
-                    value={kind}
-                    onChange={(e) => onChange({ kind: e.target.value })}
-                    className="text-xs border border-tint rounded px-2 py-1 bg-paper focus:outline-none focus:border-green"
-                  >
-                    <option value="document">Document</option>
-                    <option value="number">Number</option>
-                    <option value="information">Information</option>
-                  </select>
-                </>
-              ) : (
-                <>
-                  Type
-                  <div className="mt-0.5 text-xs text-ink capitalize">{kind}</div>
-                </>
-              )}
-            </div>
-            <div className="text-xs text-slate-500">
-              Secondary assignee
-              {canEdit ? (
-                <select
-                  value={it.adHocOwner || ''}
-                  onChange={(e) => onChange({ adHocOwner: e.target.value })}
-                  className="mt-1 block text-xs border border-tint rounded px-2 py-1 bg-paper focus:outline-none focus:border-green"
-                >
-                  <option value="">None</option>
-                  {team.map((p) => (
-                    <option key={p.id} value={p.name}>{p.name}</option>
-                  ))}
-                </select>
-              ) : (
-                <div className="mt-0.5 text-xs text-ink">{it.adHocOwner || '—'}</div>
-              )}
-            </div>
-          </div>}
-
-          {/* ── Remarks ───────────────────────────────────────────── */}
-          <div className="text-xs text-slate-500">
-            Remarks
-            {canEdit
-              ? <EditableText value={it.remarks || ''} onSave={(v) => onChange({ remarks: v })} placeholder="overall task remark…" className="w-full mt-0.5 text-xs" />
-              : <div className="mt-0.5 text-xs text-ink">{it.remarks || '—'}</div>}
-          </div>
-
-          {/* ── Due date ──────────────────────────────────────────── */}
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-500">
-            <label className="flex items-center gap-2">
-              Due
-              <input type="date" value={it.due || ''} disabled={!canEdit} onChange={(e) => onChange({ due: e.target.value })} className="border border-tint rounded px-2 py-1 text-xs text-ink focus:outline-none focus:border-green disabled:opacity-60" />
-            </label>
-          </div>
-
-          {/* ── Meta + delete ─────────────────────────────────────── */}
-          <div className="flex items-center gap-4 text-xs text-slate-400 pt-2 border-t border-tint/40">
-            {it.dateRequested && <span>Requested {it.dateRequested}</span>}
-            {it.followups > 0 && <span>{it.followups} reminder{it.followups > 1 ? 's' : ''}</span>}
-            <span className="flex-1" />
-            {onRemove && <button onClick={onRemove} className="text-slate-400 hover:text-deep">Delete task</button>}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -1351,6 +1291,7 @@ export default function EngagementDetail() {
   const [typeFilter, setTypeFilter] = useState('all');
   const [q, setQ] = useState('');
   const [editingDetails, setEditingDetails] = useState(false);
+  const [sidebarTask, setSidebarTask] = useState(null);
 
   const canEdit = user?.role === 'partner' || user?.role === 'manager' || (user?.role === 'student' && engagement?.incharge === user?.name);
   const isPartnerManager = user?.role === 'partner' || user?.role === 'manager';
@@ -1803,6 +1744,7 @@ export default function EngagementDetail() {
                         return [...prev, file];
                       })}
                       onFileRemoved={(fileId) => setFiles(prev => prev.filter(f => f.id !== fileId))}
+                      onOpenSidebar={(task) => setSidebarTask(task)}
                     />
                   ))}
                   {canEdit && (
@@ -1853,6 +1795,28 @@ export default function EngagementDetail() {
           onClose={() => setEditingDetails(false)}
         />
       )}
+      {sidebarTask && (() => {
+        const sidebarIt = items.find(i => i.id === sidebarTask.id) || sidebarTask;
+        return (
+          <TaskDetailSidebar
+            it={sidebarIt}
+            team={team}
+            canEdit={canEdit}
+            isStudent={isStudent}
+            engagementId={id}
+            onChange={(patch) => { updateItem(sidebarIt.id, patch); setSidebarTask(prev => ({ ...prev, ...patch })); }}
+            onRemove={canEdit && isAdhoc(sidebarIt) ? () => { if (confirm(`Delete "${sidebarIt.p}"? The Activity log keeps a trace.`)) { removeItem(sidebarIt.id); setSidebarTask(null); } } : null}
+            itemFiles={files.filter(f => f.assignedItemId === sidebarIt.id)}
+            onFileUploaded={(file) => setFiles(prev => {
+              const existing = prev.find(f => f.id === file.id);
+              if (existing) return prev.map(f => f.id === file.id ? file : f);
+              return [...prev, file];
+            })}
+            onFileRemoved={(fileId) => setFiles(prev => prev.filter(f => f.id !== fileId))}
+            onClose={() => setSidebarTask(null)}
+          />
+        );
+      })()}
     </div>
   );
 }
