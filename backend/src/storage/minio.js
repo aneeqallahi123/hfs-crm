@@ -54,11 +54,27 @@ export async function ensureBucket() {
   if (!exists) await client.makeBucket(BUCKET);
 }
 
+// All CRM object keys are plain ASCII by construction. That is load-bearing, not cosmetic:
+// keys containing "@", spaces or non-ASCII (which is how Evolution names every inbound file)
+// fail intermittently on per-object calls depending on which Cloudflare edge the request lands
+// on. Everything we store gets a key shaped like this one, whatever the file was called.
+export function buildObjectKey(prefixId, originalName) {
+  const ext = String(originalName || '').split('.').pop();
+  const safeExt = ext && ext !== originalName ? `.${ext.replace(/[^A-Za-z0-9]/g, '').slice(0, 10)}` : '';
+  return `${prefixId}/${Date.now()}-${Math.random().toString(36).slice(2)}${safeExt}`;
+}
+
 export async function uploadFile(engagementId, originalName, buffer, mimeType) {
-  const ext = originalName.split('.').pop();
-  const key = `${engagementId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+  const key = buildObjectKey(engagementId, originalName);
   await getClient().putObject(BUCKET, key, buffer, buffer.length, { 'Content-Type': mimeType });
   return key;
+}
+
+// Server-side copy within the bucket. The source key travels in the x-amz-copy-source HEADER
+// rather than the URL path, which is why this works for keys that direct GET/HEAD cannot
+// reach. MinIO copies internally, so no bytes cross the network regardless of file size.
+export async function copyFile(destKey, sourceKey) {
+  return getClient().copyObject(BUCKET, destKey, `/${BUCKET}/${sourceKey}`);
 }
 
 // `filename` makes MinIO send a Content-Disposition on the presigned response, so a

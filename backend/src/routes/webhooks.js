@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { pool } from '../db/pool.js';
-import { uploadFile, statFile, MINIO_SDK_VERSION } from '../storage/minio.js';
+import { uploadFile, statFile, copyFile, buildObjectKey, MINIO_SDK_VERSION } from '../storage/minio.js';
 
 const router = Router();
 
@@ -32,16 +32,16 @@ function isNotFound(err) {
   return err?.code === 'NotFound' || err?.code === 'NoSuchKey' || err?.statusCode === 404;
 }
 
-// Poll for the object until it appears or the budget runs out. Anything that is not a
+// Retry until the source object exists or the budget runs out. Anything that is not a
 // "missing object" error (bad credentials, MinIO unreachable) fails immediately — retrying
 // those just burns the n8n request timeout and hides the real cause.
-async function statWithWait(key, budgetMs = MEDIA_WAIT_MS) {
+async function copyWithWait(destKey, sourceKey, budgetMs = MEDIA_WAIT_MS) {
   const deadline = Date.now() + budgetMs;
   let delay = 400;
 
   for (;;) {
     try {
-      return await statFile(key);
+      return await copyFile(destKey, sourceKey);
     } catch (err) {
       if (!isNotFound(err)) throw err;
       if (Date.now() + delay >= deadline) throw err;
@@ -95,7 +95,7 @@ export function deriveMinioKey(mediaRef) {
 router.post('/inbound-file', webhookAuth, async (req, res) => {
   const {
     engagementId, groupId, sender, messageId, fileName, mimeType,
-    mediaUrl, mediaKey, fileBase64,
+    mediaUrl, mediaKey, fileBase64, size: reportedSize,
   } = req.body;
 
   if (!mediaUrl && !mediaKey && !fileBase64) {
@@ -127,19 +127,23 @@ router.post('/inbound-file', webhookAuth, async (req, res) => {
     let size;
 
     if (mediaUrl || mediaKey) {
-      minioKey = deriveMinioKey(mediaKey || mediaUrl);
-      if (!minioKey) {
+      const sourceKey = deriveMinioKey(mediaKey || mediaUrl);
+      if (!sourceKey) {
         return res.status(400).json({ error: `Could not derive a MinIO object key from "${mediaKey || mediaUrl}"` });
       }
 
-      // Confirm Evolution actually wrote the object, and take its size from MinIO rather
-      // than trusting the webhook. A missing object is a real failure and must surface to
-      // n8n as one, not be recorded as a row pointing at nothing.
-      let stat;
+      // Re-key onto a plain-ASCII path we control. Evolution names objects after the WhatsApp
+      // group JID and the sender's filename, so they routinely contain "@", spaces and
+      // non-ASCII — and per-object GET/HEAD on those succeeds or fails depending on which
+      // Cloudflare edge the request reaches, which is not something to build an inbox on.
+      // The copy is server-side (source rides in a header, not the path) so it is free even
+      // at 200MB, and everything downstream then uses the same key shape as manual uploads.
+      minioKey = buildObjectKey(resolvedEngagementId || 'unmatched', fileName);
+
       try {
-        stat = await statWithWait(minioKey);
+        await copyWithWait(minioKey, sourceKey);
       } catch (err) {
-        console.error(`Inbound file: MinIO stat failed for key "${minioKey}":`, err.message);
+        console.error(`Inbound file: MinIO copy/stat failed (source "${sourceKey}" -> "${minioKey}"):`, err.message);
 
         if (!isNotFound(err)) {
           // Credentials, connectivity, bucket policy, or a signature that did not survive the
@@ -147,7 +151,7 @@ router.post('/inbound-file', webhookAuth, async (req, res) => {
           // is ambiguous (MinIO reports a mangled-path signature failure and genuinely bad keys
           // with similar wording), and guessing from it sends you down the wrong path.
           return res.status(502).json({
-            error: `MinIO error while looking up "${minioKey}": ${err.message}`,
+            error: `MinIO error copying "${sourceKey}" to "${minioKey}": ${err.message}`,
             s3Code: err?.code ?? null,
             httpStatus: err?.statusCode ?? null,
             endpoint: `${process.env.MINIO_ENDPOINT}:${process.env.MINIO_PORT}`,
@@ -159,12 +163,24 @@ router.post('/inbound-file', webhookAuth, async (req, res) => {
         // Still absent after waiting. Signal retryable so n8n's retry can pick it up once
         // a slow upload lands, rather than losing the file.
         return res.status(409).json({
-          error: `Media not yet in MinIO at key "${minioKey}" after ${MEDIA_WAIT_MS}ms — Evolution may still be uploading, or its S3_BUCKET may not match MINIO_BUCKET (${BUCKET})`,
+          error: `Media not yet in MinIO at key "${sourceKey}" after ${MEDIA_WAIT_MS}ms — Evolution may still be uploading, or its S3_BUCKET may not match MINIO_BUCKET (${BUCKET})`,
           retryable: true,
         });
       }
 
-      size = stat.size;
+      // The copy succeeded, so the file is stored and this request will not fail from here on.
+      // The stat is only to record an accurate size, so treat it as best-effort: it can throw,
+      // and stat.size derives from content-length, which Cloudflare rewrites for compressible
+      // content, so even a successful HEAD can yield NaN. Fall back to the size the webhook
+      // reported, then to null, rather than losing the file or writing NaN into a bigint.
+      let stat = null;
+      try {
+        stat = await statFile(minioKey);
+      } catch (err) {
+        console.warn(`Inbound file: size lookup failed for "${minioKey}" (file is stored):`, err.message);
+      }
+
+      size = Number.isFinite(stat?.size) ? stat.size : (Number(reportedSize) || null);
       if (size > MAX_FILE_BYTES) {
         return res.status(413).json({
           error: `File exceeds limit (${Math.round(size / 1024 / 1024)}MB > ${process.env.MAX_INBOX_FILE_MB || 200}MB)`,
