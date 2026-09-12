@@ -1,3 +1,7 @@
+// minio v8 is required, not merely preferred: v7 signs object paths containing "@" in a way
+// this MinIO rejects, and Evolution API writes every inbound WhatsApp file under a key holding
+// the group JID (…/120363…@g.us/…). On v7 those objects list fine and serve fine via presigned
+// URL, but every statObject/getObject/removeObject on them fails 403.
 import * as Minio from 'minio';
 
 const BUCKET = process.env.MINIO_BUCKET;

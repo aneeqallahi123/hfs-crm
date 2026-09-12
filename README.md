@@ -341,6 +341,11 @@ sudo launchctl start com.cloudflare.cloudflared
 - Docker Compose at `localhost:9000` (API) and `localhost:9001` (console)
 - Bucket: `hfc-documents` (auto-created on backend startup)
 
+> **`backend` requires `minio` v8+.** Evolution writes every inbound file under a key containing
+> the group JID (`…/120363…@g.us/…`). The v7 client signs object paths containing `@` in a way
+> MinIO rejects, so `statObject`/`getObject`/`removeObject` on those objects fail with 403 while
+> listing and presigned URLs still work — a confusing failure mode worth not rediscovering.
+
 ### Evolution API → MinIO (required for large inbound files)
 
 Evolution writes received WhatsApp media directly to MinIO on the same machine, so the bytes
