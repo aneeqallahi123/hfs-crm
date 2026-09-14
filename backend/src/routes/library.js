@@ -64,7 +64,7 @@ router.get('/', async (req, res) => {
 });
 
 // PUT /api/library/:module — full replace (partner only)
-router.put('/:module', rbac('partner'), async (req, res) => {
+router.put('/:module', rbac('partner', 'manager'), async (req, res) => {
   const { module } = req.params;
   const { library } = req.body;
   if (!Array.isArray(library)) return res.status(400).json({ error: 'library array required' });
@@ -105,7 +105,7 @@ router.put('/:module', rbac('partner'), async (req, res) => {
 });
 
 // POST /api/library/items/:itemId/context-doc — upload a context document for a library item (partner only)
-router.post('/items/:itemId/context-doc', rbac('partner'), upload.single('file'), async (req, res) => {
+router.post('/items/:itemId/context-doc', rbac('partner', 'manager'), upload.single('file'), async (req, res) => {
   const { itemId } = req.params;
   if (!req.file) return res.status(400).json({ error: 'file required' });
 
@@ -138,7 +138,7 @@ router.post('/items/:itemId/context-doc', rbac('partner'), upload.single('file')
 });
 
 // DELETE /api/library/items/:itemId/context-doc (partner only)
-router.delete('/items/:itemId/context-doc', rbac('partner'), async (req, res) => {
+router.delete('/items/:itemId/context-doc', rbac('partner', 'manager'), async (req, res) => {
   const { itemId } = req.params;
   try {
     const { rows } = await pool.query('SELECT context_doc_key FROM library_items WHERE id = $1', [itemId]);

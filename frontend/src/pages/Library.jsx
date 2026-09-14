@@ -125,7 +125,7 @@ export default function Library() {
   const [newCat, setNewCat] = useState('');
   const [editMode, setEditMode] = useState(false);
 
-  const canEdit = user?.role === 'partner';
+  const canEdit = user?.role === 'partner' || user?.role === 'manager';
 
   useEffect(() => {
     api.library.get('audit')
