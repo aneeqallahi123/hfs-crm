@@ -283,12 +283,24 @@ router.delete('/:id', rbac('partner', 'manager'), async (req, res) => {
 });
 
 // POST /api/items/:id/context-doc — upload engagement-specific context doc
-router.post('/:id/context-doc', rbac('partner', 'manager'), upload.single('file'), async (req, res) => {
+router.post('/:id/context-doc', upload.single('file'), async (req, res) => {
   const { id } = req.params;
   if (!req.file) return res.status(400).json({ error: 'file required' });
   try {
-    const { rows } = await pool.query('SELECT context_doc_key FROM items WHERE id = $1', [id]);
+    const { rows } = await pool.query(
+      `SELECT i.context_doc_key, e.incharge FROM items i JOIN engagements e ON e.id = i.engagement_id WHERE i.id = $1`,
+      [id]
+    );
     if (!rows[0]) return res.status(404).json({ error: 'Item not found' });
+
+    const role = req.user.role;
+    if (role === 'student' && rows[0].incharge !== req.user.name) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+    if (role !== 'partner' && role !== 'manager' && role !== 'student') {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+
     if (rows[0].context_doc_key) {
       try { await deleteFile(rows[0].context_doc_key); } catch {}
     }
