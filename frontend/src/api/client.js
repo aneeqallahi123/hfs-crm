@@ -12,6 +12,20 @@ export function setAccessToken(token) {
   } catch {}
 }
 
+async function uploadFetch(url, formData) {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
+    credentials: 'include',
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
 async function request(method, path, body) {
   const res = await fetch(`${import.meta.env.VITE_API_URL}${path}`, {
     method,
@@ -85,12 +99,7 @@ export const api = {
     bulkUpdate: (updates) => request('PATCH', '/items/bulk', { updates }),
     addAdhoc: (data) => request('POST', '/items/adhoc', data).then(r => r?.item ?? r),
     delete: (id) => request('DELETE', `/items/${id}`),
-    uploadContextDoc: (itemId, formData) => fetch(`${import.meta.env.VITE_API_URL}/items/${itemId}/context-doc`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${accessToken}` },
-      credentials: 'include',
-      body: formData,
-    }).then(r => r.json()),
+    uploadContextDoc: (itemId, formData) => uploadFetch(`${import.meta.env.VITE_API_URL}/items/${itemId}/context-doc`, formData),
     removeContextDoc: (itemId) => request('DELETE', `/items/${itemId}/context-doc`),
   },
   inbox: {
@@ -101,12 +110,7 @@ export const api = {
     markIrrelevant: (fileId, irrelevant) => request('PATCH', `/inbox/${fileId}/irrelevant`, { irrelevant }),
   },
   documents: {
-    upload: (formData) => fetch(`${import.meta.env.VITE_API_URL}/documents/upload`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${accessToken}` },
-      credentials: 'include',
-      body: formData,
-    }).then(r => r.json()),
+    upload: (formData) => uploadFetch(`${import.meta.env.VITE_API_URL}/documents/upload`, formData),
     open: (fileId) => {
       const token = accessToken ? `?token=${encodeURIComponent(accessToken)}` : '';
       window.open(`${import.meta.env.VITE_API_URL}/documents/${fileId}/download${token}`, '_blank');
@@ -126,12 +130,7 @@ export const api = {
   library: {
     get: (module = 'audit') => request('GET', `/library?module=${module}`).then(r => r?.library ?? r),
     save: (module, library) => request('PUT', `/library/${module}`, { library }),
-    uploadContextDoc: (itemId, formData) => fetch(`${import.meta.env.VITE_API_URL}/library/items/${itemId}/context-doc`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${accessToken}` },
-      credentials: 'include',
-      body: formData,
-    }).then(r => r.json()),
+    uploadContextDoc: (itemId, formData) => uploadFetch(`${import.meta.env.VITE_API_URL}/library/items/${itemId}/context-doc`, formData),
     removeContextDoc: (itemId) => request('DELETE', `/library/items/${itemId}/context-doc`),
   },
   clientLibrary: {
@@ -150,11 +149,6 @@ export const api = {
     list: (clientId) => request('GET', `/clients/${clientId}/values`).then(r => r?.values ?? r),
     upsert: (clientId, data) => request('PUT', `/clients/${clientId}/values`, data),
     delete: (clientId, valueId) => request('DELETE', `/clients/${clientId}/values/${valueId}`),
-    upload: (clientId, formData) => fetch(`${import.meta.env.VITE_API_URL}/clients/${clientId}/values/upload`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${accessToken}` },
-      credentials: 'include',
-      body: formData,
-    }).then(r => r.json()),
+    upload: (clientId, formData) => uploadFetch(`${import.meta.env.VITE_API_URL}/clients/${clientId}/values/upload`, formData),
   },
 };
