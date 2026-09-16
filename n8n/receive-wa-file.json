@@ -23,7 +23,7 @@
             {
               "value1": "={{ $json.body.data?.messageType }}",
               "operation": "regex",
-              "value2": "documentMessage|imageMessage|audioMessage|videoMessage|stickerMessage|pttMessage"
+              "value2": "documentMessage|documentWithCaptionMessage|imageMessage|audioMessage|videoMessage|stickerMessage|pttMessage"
             }
           ]
         }
