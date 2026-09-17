@@ -3,6 +3,7 @@ import { pool } from '../db/pool.js';
 import { rbac } from '../middleware/rbac.js';
 import { upload } from '../middleware/upload.js';
 import { uploadFile, deleteFile, getPresignedUrl } from '../storage/minio.js';
+import { logEvent } from '../db/events.js';
 
 const router = Router();
 
@@ -49,25 +50,21 @@ router.post('/upload', (req, res, next) => {
         `UPDATE items SET file_note = $1, updated_at = NOW() WHERE id = $2`,
         [req.file.originalname, itemId]
       );
-      // Write event
+      // Write event — use logEvent so a logging failure never aborts the upload
       const eng = await pool.query('SELECT client_id, module FROM engagements WHERE id=$1', [engagementId]);
       if (eng.rows[0]) {
-        await pool.query(
-          `INSERT INTO events (day, by, user_id, module, type, engagement_id, client_id, entity, entity_id, label, to_val)
-           VALUES ($1, $2, $3, $4, 'file.uploaded', $5, $6, 'item', $7, $8, $9)`,
-          [
-            now.slice(0, 10), req.user.name, req.user.sub,
-            eng.rows[0].module, engagementId, eng.rows[0].client_id,
-            itemId, req.file.originalname, minioKey,
-          ]
-        );
+        await logEvent({
+          by: req.user.name, userId: req.user.sub, module: eng.rows[0].module,
+          type: 'file.uploaded', engagementId, clientId: eng.rows[0].client_id,
+          entity: 'item', entityId: itemId, label: req.file.originalname, to: minioKey,
+        });
       }
     }
 
     res.status(201).json({ file: rows[0] });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('[documents/upload]', err);
+    res.status(500).json({ error: err.message || 'Internal server error' });
   }
 });
 
