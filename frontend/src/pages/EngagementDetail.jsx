@@ -14,6 +14,7 @@ import {
   engMetrics, withStatus, composeMessage, afterSend, normalizePhone, fmtSize,
   statusLabel, statusStyle, sectionLabel,
 } from '../lib/metrics.js';
+import { loadSectionNames } from '../lib/sections.js';
 
 // KPI stages in desired display order
 const STAGES = [
@@ -1550,7 +1551,7 @@ export default function EngagementDetail() {
 
   async function load() {
     try {
-      const [eng, its, fls] = await Promise.all([api.engagements.get(id), api.items.list(id), api.inbox.list(id)]);
+      const [eng, its, fls] = await Promise.all([api.engagements.get(id), api.items.list(id), api.inbox.list(id), loadSectionNames()]);
       setEngagement(eng);
       setItems(Array.isArray(its) ? its : []);
       setFiles(Array.isArray(fls) ? fls : []);

@@ -4,9 +4,8 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import Btn from '../components/Btn.jsx';
 import EditableText from '../components/EditableText.jsx';
-import { SECTION_NAMES } from '../lib/metrics.js';
+import { setSectionNames } from '../lib/metrics.js';
 
-const ORDER = { A: 0, B: 1, C: 2, D: 3 };
 const TASK_TYPES = ['document', 'number', 'information'];
 
 function fmtSize(bytes) {
@@ -117,7 +116,8 @@ export default function Library() {
   const { user } = useAuth();
   const toast = useToast();
   const [lib, setLib] = useState([]);
-  const [names, setNames] = useState({ ...SECTION_NAMES });
+  const [names, setNames] = useState({});
+  const [order, setOrder] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -128,9 +128,15 @@ export default function Library() {
   const canEdit = user?.role === 'partner' || user?.role === 'manager';
 
   useEffect(() => {
-    api.library.get('audit')
+    api.library.getFull('audit')
       .then((data) => {
-        const heads = Array.isArray(data) ? data : (data?.library || []);
+        const heads = data?.library || [];
+        const sections = data?.sections || [];
+        const nm = {};
+        sections.forEach((s) => { nm[s.code] = s.name; });
+        heads.forEach((h) => { if (!nm[h.section]) nm[h.section] = h.section; });
+        setNames(nm);
+        setOrder(Array.from(new Set([...sections.map((s) => s.code), ...heads.map((h) => h.section)])));
         setLib(heads.map((h) => ({
           id: h.id || h.headId,
           headId: h.headId,
@@ -159,9 +165,8 @@ export default function Library() {
   }, []);
 
   const catCodes = useMemo(() => (
-    Array.from(new Set([...Object.keys(names), ...lib.map((h) => h.section)]))
-      .sort((a, b) => (ORDER[a] ?? 99) - (ORDER[b] ?? 99) || String(names[a] || a).localeCompare(String(names[b] || b)))
-  ), [names, lib]);
+    Array.from(new Set([...order, ...lib.map((h) => h.section)]))
+  ), [order, lib]);
 
   const allCollapsed = catCodes.every((c) => collapsed[c]);
 
@@ -178,6 +183,7 @@ export default function Library() {
     if (!newCat.trim()) return;
     const code = 'cat_' + newId();
     setNames((n) => ({ ...n, [code]: newCat.trim() }));
+    setOrder((o) => [...o, code]);
     setCollapsed((prev) => ({ ...prev, [code]: false }));
     setNewCat('');
     setDirty(true);
@@ -189,8 +195,15 @@ export default function Library() {
     if (!confirm(`Delete category "${label}"?${heads.length ? ` This removes ${heads.length} sub-categor${heads.length > 1 ? 'ies' : 'y'} and ${n} task${n === 1 ? '' : 's'} from the library.` : ''} Existing engagements are not affected.`)) return;
     markDirty((prev) => prev.filter((h) => h.section !== code));
     setNames((prev) => { const nn = { ...prev }; delete nn[code]; return nn; });
+    setOrder((o) => o.filter((c) => c !== code));
+    setDirty(true);
   }
-  function renameCategory(code, name) { setNames((n) => ({ ...n, [code]: name })); setDirty(true); }
+  function renameCategory(code, name) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setNames((n) => ({ ...n, [code]: trimmed }));
+    setDirty(true);
+  }
   function addHead(code, sub) { markDirty((prev) => [...prev, { id: newId(), headId: newId(), section: code, sub, items: [] }]); }
   function renameHead(id, sub) { markDirty((prev) => prev.map((h) => (h.id === id ? { ...h, sub } : h))); }
   function removeHead(id) { markDirty((prev) => prev.filter((h) => h.id !== id)); }
@@ -236,7 +249,9 @@ export default function Library() {
           contextDocSize: it.contextDocSize || 0,
         })),
       }));
-      await api.library.save('audit', payload);
+      const sections = catCodes.map((code) => ({ code, name: names[code] || code }));
+      await api.library.save('audit', payload, sections);
+      setSectionNames(Object.fromEntries(sections.map((s) => [s.code, s.name])));
       toast('Library saved', 'success');
       setDirty(false);
     } catch (err) {

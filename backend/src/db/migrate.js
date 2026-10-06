@@ -2,7 +2,7 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { pool } from './pool.js';
-import { AUDIT_LIBRARY, defaultIncluded } from './library_seed.js';
+import { AUDIT_LIBRARY, SECTION_NAMES } from './library_seed.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -48,6 +48,32 @@ export async function runMigrations() {
       req BOOLEAN NOT NULL DEFAULT true,
       sort_order INT DEFAULT 0
     )
+  `);
+
+  // Library categories (sections): code + display name, so new/renamed categories persist
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS library_sections (
+      module     TEXT NOT NULL,
+      code       TEXT NOT NULL,
+      name       TEXT NOT NULL,
+      sort_order INT  NOT NULL DEFAULT 0,
+      PRIMARY KEY (module, code)
+    )
+  `);
+  // Backfill: known A–D names first, then any other section already used by a head
+  for (const [i, [code, name]] of Object.entries(SECTION_NAMES).entries()) {
+    await pool.query(
+      `INSERT INTO library_sections (module, code, name, sort_order)
+       SELECT DISTINCT module, $1, $2, $3 FROM library_heads WHERE section = $1
+       ON CONFLICT DO NOTHING`,
+      [code, name, i]
+    );
+  }
+  await pool.query(`
+    INSERT INTO library_sections (module, code, name, sort_order)
+    SELECT module, section, section, 100 + (ROW_NUMBER() OVER (PARTITION BY module ORDER BY MIN(sort_order)))
+    FROM library_heads GROUP BY module, section
+    ON CONFLICT DO NOTHING
   `);
 
   // Add task_type column if missing
@@ -208,6 +234,13 @@ async function seedAuditLibrary() {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    for (const [i, [code, name]] of Object.entries(SECTION_NAMES).entries()) {
+      await client.query(
+        `INSERT INTO library_sections (module, code, name, sort_order) VALUES ('audit', $1, $2, $3)
+         ON CONFLICT (module, code) DO NOTHING`,
+        [code, name, i]
+      );
+    }
     for (let hi = 0; hi < AUDIT_LIBRARY.length; hi++) {
       const head = AUDIT_LIBRARY[hi];
       const { rows: [h] } = await client.query(

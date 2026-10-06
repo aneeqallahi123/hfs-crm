@@ -56,7 +56,13 @@ router.get('/', async (req, res) => {
       };
     }));
 
-    res.json({ module, library });
+    const { rows: sectionRows } = await pool.query(
+      `SELECT code, name FROM library_sections WHERE module = $1 ORDER BY sort_order, code`,
+      [module]
+    );
+    const sections = sectionRows.map(s => ({ code: s.code, name: s.name }));
+
+    res.json({ module, library, sections });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error' });
@@ -66,12 +72,28 @@ router.get('/', async (req, res) => {
 // PUT /api/library/:module — full replace (partner only)
 router.put('/:module', rbac('partner', 'manager'), async (req, res) => {
   const { module } = req.params;
-  const { library } = req.body;
+  const { library, sections } = req.body;
   if (!Array.isArray(library)) return res.status(400).json({ error: 'library array required' });
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+
+    // Replace the category list (code + display name + order) when the client sends it
+    if (Array.isArray(sections)) {
+      await client.query(`DELETE FROM library_sections WHERE module = $1`, [module]);
+      const seen = new Set();
+      for (let si = 0; si < sections.length; si++) {
+        const code = String(sections[si]?.code || '').trim();
+        if (!code || seen.has(code)) continue;
+        seen.add(code);
+        const name = String(sections[si].name || '').trim() || code;
+        await client.query(
+          `INSERT INTO library_sections (module, code, name, sort_order) VALUES ($1, $2, $3, $4)`,
+          [module, code, name, si]
+        );
+      }
+    }
 
     // Delete existing heads (cascades to items via ON DELETE CASCADE)
     await client.query(`DELETE FROM library_heads WHERE module = $1`, [module]);

@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import Btn from '../components/Btn.jsx';
 import { sectionLabel } from '../lib/metrics.js';
+import { loadSectionNames } from '../lib/sections.js';
 
 export default function EngagementScope() {
   const { id } = useParams();
@@ -31,7 +32,7 @@ export default function EngagementScope() {
 
   async function load() {
     try {
-      const [eng, its] = await Promise.all([api.engagements.get(id), api.items.list(id)]);
+      const [eng, its] = await Promise.all([api.engagements.get(id), api.items.list(id), loadSectionNames()]);
       setEngagement(eng);
       setItems(Array.isArray(its) ? its : []);
       if (eng.clientId) api.clients.get(eng.clientId).then(setClient).catch(() => {});

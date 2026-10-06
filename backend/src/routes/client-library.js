@@ -45,13 +45,23 @@ router.get('/:id/library', async (req, res) => {
     const excludedHeads = new Set(headExcl.map(r => r.head_id));
     const excludedItems = new Set(itemExcl.map(r => r.item_id));
 
+    const { rows: sectionRows } = await pool.query(
+      'SELECT code, name FROM library_sections WHERE module = $1 ORDER BY sort_order, code',
+      [module]
+    );
+    const sectionNames = { ...SECTION_NAMES };
+    const sectionOrder = new Map();
+    sectionRows.forEach((s, i) => { sectionNames[s.code] = s.name; sectionOrder.set(s.code, i); });
+
     const sectionSet = new Set([
-      ...Object.keys(SECTION_NAMES),
+      ...sectionRows.map(s => s.code),
       ...masterHeads.map(h => h.section),
       ...customHeads.map(h => h.section),
     ]);
 
-    const library = [...sectionSet].sort().map(section => {
+    const orderedSections = [...sectionSet].sort((a, b) =>
+      (sectionOrder.get(a) ?? 999) - (sectionOrder.get(b) ?? 999) || a.localeCompare(b));
+    const library = orderedSections.map(section => {
       const mHeads = masterHeads
         .filter(h => h.section === section)
         .map(h => ({
@@ -91,7 +101,7 @@ router.get('/:id/library', async (req, res) => {
 
       const heads = [...mHeads, ...cHeads];
       if (!heads.length) return null;
-      return { section, sectionName: SECTION_NAMES[section] || section, heads };
+      return { section, sectionName: sectionNames[section] || section, heads };
     }).filter(Boolean);
 
     res.json({ library, years: yearRows.map(r => r.year) });

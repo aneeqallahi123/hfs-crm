@@ -151,7 +151,10 @@ export const SECTION_NAMES = {
   C: 'C · General Procedures',
   D: 'D · Head-Wise Audit',
 };
-export const sectionLabel = (sec) => (sec === ADHOC.section ? ADHOC.sub : SECTION_NAMES[sec] || sec);
+// Names of categories as configured in the Library (A–D defaults until loaded).
+let sectionNames = { ...SECTION_NAMES };
+export const setSectionNames = (names) => { sectionNames = { ...SECTION_NAMES, ...names }; };
+export const sectionLabel = (sec) => (sec === ADHOC.section ? ADHOC.sub : sectionNames[sec] || sec);
 
 const engWord = (mod) => (mod || 'audit') === 'audit' ? 'the audit of' : `the ${mod} engagement of`;
 

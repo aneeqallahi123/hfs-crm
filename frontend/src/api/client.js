@@ -129,7 +129,8 @@ export const api = {
   },
   library: {
     get: (module = 'audit') => request('GET', `/library?module=${module}`).then(r => r?.library ?? r),
-    save: (module, library) => request('PUT', `/library/${module}`, { library }),
+    getFull: (module = 'audit') => request('GET', `/library?module=${module}`),
+    save: (module, library, sections) => request('PUT', `/library/${module}`, { library, sections }),
     uploadContextDoc: (itemId, formData) => uploadFetch(`${import.meta.env.VITE_API_URL}/library/items/${itemId}/context-doc`, formData),
     removeContextDoc: (itemId) => request('DELETE', `/library/items/${itemId}/context-doc`),
   },
