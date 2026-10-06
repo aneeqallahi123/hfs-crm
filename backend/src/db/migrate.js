@@ -64,14 +64,14 @@ export async function runMigrations() {
   for (const [i, [code, name]] of Object.entries(SECTION_NAMES).entries()) {
     await pool.query(
       `INSERT INTO library_sections (module, code, name, sort_order)
-       SELECT DISTINCT module, $1, $2, $3 FROM library_heads WHERE section = $1
+       SELECT DISTINCT module, $1::text, $2::text, $3::int FROM library_heads WHERE section = $1::text
        ON CONFLICT DO NOTHING`,
       [code, name, i]
     );
   }
   await pool.query(`
     INSERT INTO library_sections (module, code, name, sort_order)
-    SELECT module, section, section, 100 + (ROW_NUMBER() OVER (PARTITION BY module ORDER BY MIN(sort_order)))
+    SELECT module, section, section, (100 + ROW_NUMBER() OVER (PARTITION BY module ORDER BY MIN(sort_order)))::int
     FROM library_heads GROUP BY module, section
     ON CONFLICT DO NOTHING
   `);
