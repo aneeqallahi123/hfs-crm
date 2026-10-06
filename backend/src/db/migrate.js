@@ -76,6 +76,14 @@ export async function runMigrations() {
     ON CONFLICT DO NOTHING
   `);
 
+  // Repair: restore default A–D names on rows that were seeded with just the code as the name
+  for (const [code, name] of Object.entries(SECTION_NAMES)) {
+    await pool.query(
+      `UPDATE library_sections SET name = $2 WHERE code = $1 AND name = $1`,
+      [code, name]
+    );
+  }
+
   // Add task_type column if missing
   await pool.query(`
     ALTER TABLE library_items

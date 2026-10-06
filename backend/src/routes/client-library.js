@@ -51,7 +51,10 @@ router.get('/:id/library', async (req, res) => {
     );
     const sectionNames = { ...SECTION_NAMES };
     const sectionOrder = new Map();
-    sectionRows.forEach((s, i) => { sectionNames[s.code] = s.name; sectionOrder.set(s.code, i); });
+    sectionRows.forEach((s, i) => {
+      if (s.name !== s.code || !sectionNames[s.code]) sectionNames[s.code] = s.name;
+      sectionOrder.set(s.code, i);
+    });
 
     const sectionSet = new Set([
       ...sectionRows.map(s => s.code),

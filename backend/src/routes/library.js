@@ -3,6 +3,7 @@ import { pool } from '../db/pool.js';
 import { rbac } from '../middleware/rbac.js';
 import { upload } from '../middleware/upload.js';
 import { minioClient, getPresignedUrl, deleteFile } from '../storage/minio.js';
+import { SECTION_NAMES } from '../db/library_seed.js';
 
 const BUCKET = process.env.MINIO_BUCKET;
 
@@ -60,7 +61,10 @@ router.get('/', async (req, res) => {
       `SELECT code, name FROM library_sections WHERE module = $1 ORDER BY sort_order, code`,
       [module]
     );
-    const sections = sectionRows.map(s => ({ code: s.code, name: s.name }));
+    const sections = sectionRows.map(s => ({
+      code: s.code,
+      name: s.name === s.code && SECTION_NAMES[s.code] ? SECTION_NAMES[s.code] : s.name,
+    }));
 
     res.json({ module, library, sections });
   } catch (err) {
