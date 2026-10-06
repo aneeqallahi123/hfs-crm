@@ -122,7 +122,7 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="w-72 shrink-0 text-paper h-screen overflow-y-auto flex flex-col" aria-label="Navigation">
+    <aside className="w-72 shrink-0 text-paper h-[100dvh] overflow-y-auto flex flex-col" aria-label="Navigation">
       <div className="px-5 pt-6 pb-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-md bg-paper/10 border border-paper/15 flex items-center justify-center shrink-0">

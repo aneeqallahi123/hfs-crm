@@ -498,7 +498,7 @@ function TaskDetailSidebar({ it, team, canEdit, isStudent, onChange, engagementI
   }
 
   return (
-    <div className="w-[400px] sticky top-0 h-screen bg-paper border-l border-tint shadow-xl flex flex-col overflow-hidden">
+    <div className="w-[400px] h-full bg-paper border-l border-tint shadow-xl flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-start gap-3 px-5 py-4 border-b border-tint shrink-0">
           <div className="flex-1 min-w-0">
@@ -2078,7 +2078,7 @@ export default function EngagementDetail() {
       </div>{/* end left content column */}
 
       {/* ── Right sidebar column (pushes content, not an overlay) ── */}
-      <div className={`shrink-0 transition-all duration-300 overflow-hidden ${sidebarTask ? 'w-[400px]' : 'w-0'}`}>
+      <div className={`shrink-0 sticky top-0 self-start h-[100dvh] transition-all duration-300 overflow-hidden ${sidebarTask ? 'w-[400px]' : 'w-0'}`}>
         {sidebarTask && (() => {
           const sidebarIt = items.find(i => i.id === sidebarTask.id) || sidebarTask;
           return (
