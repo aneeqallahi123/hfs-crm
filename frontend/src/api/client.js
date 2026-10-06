@@ -88,6 +88,7 @@ export const api = {
     },
     get: (id) => request('GET', `/engagements/${id}`).then(r => r?.engagement ?? r),
     create: (data) => request('POST', '/engagements', data).then(r => r?.engagement ?? r),
+    syncLibrary: (id) => request('POST', `/engagements/${id}/sync-library`),
     update: (id, data) => request('PATCH', `/engagements/${id}`, data).then(r => r?.engagement ?? r),
     delete: (id) => request('DELETE', `/engagements/${id}`),
     rollForward: (id) => request('POST', `/engagements/${id}/roll-forward`).then(r => r?.engagement ?? r),

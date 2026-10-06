@@ -135,6 +135,56 @@ router.post('/', rbac('partner', 'manager'), async (req, res) => {
   }
 });
 
+// POST /api/engagements/:id/sync-library — add library sub-categories/tasks missing from this engagement
+router.post('/:id/sync-library', rbac('partner', 'manager'), async (req, res) => {
+  try {
+    const { rows: [eng] } = await pool.query('SELECT * FROM engagements WHERE id = $1', [req.params.id]);
+    if (!eng) return res.status(404).json({ error: 'Engagement not found' });
+
+    const { rows: heads } = await pool.query(
+      `SELECT * FROM library_heads WHERE module = $1 ORDER BY sort_order, head_id`, [eng.module]
+    );
+    const { rows: libItems } = heads.length
+      ? await pool.query(`SELECT * FROM library_items WHERE head_id_fk = ANY($1) ORDER BY sort_order`, [heads.map(h => h.id)])
+      : { rows: [] };
+    const { rows: existing } = await pool.query(
+      `SELECT head_id, ref, p, head_included FROM items WHERE engagement_id = $1`, [eng.id]
+    );
+
+    const have = new Set(existing.map(i => `${i.head_id}\u0000${i.ref}\u0000${i.p}`));
+    const headIncluded = new Map();
+    for (const i of existing) if (!headIncluded.has(i.head_id)) headIncluded.set(i.head_id, i.head_included);
+
+    const rows = [];
+    const newHeads = new Set();
+    for (const it of libItems) {
+      const head = heads.find(h => h.id === it.head_id_fk);
+      if (have.has(`${head.head_id}\u0000${it.ref}\u0000${it.p}`)) continue;
+      if (!headIncluded.has(head.head_id)) newHeads.add(head.head_id);
+      rows.push({ it, head, included: headIncluded.get(head.head_id) ?? defaultIncluded(head.section) });
+    }
+
+    if (rows.length) {
+      const placeholders = [];
+      const params = [];
+      let i = 1;
+      for (const { it, head, included } of rows) {
+        placeholders.push(`($${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, 'No progress')`);
+        params.push(eng.id, it.ref, head.section, head.head_id, head.sub, it.p, it.req, included, it.task_type || 'document');
+      }
+      await pool.query(
+        `INSERT INTO items (engagement_id, ref, section, head_id, sub, p, requestable, head_included, kind, status)
+         VALUES ${placeholders.join(', ')}`,
+        params
+      );
+    }
+    res.json({ ok: true, addedTasks: rows.length, addedSubCategories: newHeads.size });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // PATCH /api/engagements/:id
 router.patch('/:id', rbac('partner', 'manager'), async (req, res) => {
   const { incharge, contactPhone, waGroupId, deadline, year } = req.body;

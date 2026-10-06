@@ -58,6 +58,17 @@ export default function EngagementScope() {
     catch (err) { toast(err.message, 'error'); load(); }
   }
 
+  const [syncing, setSyncing] = useState(false);
+  async function syncLibrary() {
+    setSyncing(true);
+    try {
+      const r = await api.engagements.syncLibrary(id);
+      toast(r.addedTasks ? `Added ${r.addedTasks} task${r.addedTasks === 1 ? '' : 's'} from the library` : 'Already up to date with the library', 'success');
+      if (r.addedTasks) { setCatalogueOpen(true); await load(); }
+    } catch (err) { toast(err.message, 'error'); }
+    finally { setSyncing(false); }
+  }
+
   async function doAddTask(head) {
     if (!newTaskText.trim()) return;
     try {
@@ -158,6 +169,7 @@ export default function EngagementScope() {
               <div className="text-[10px] text-slate-400 mt-0.5">team tasks</div>
             </div>
             <div className="w-px bg-tint self-stretch" />
+            {canEdit && <Btn kind="ghost" onClick={syncLibrary} disabled={syncing}>{syncing ? 'Syncing…' : 'Sync with library'}</Btn>}
             <Btn onClick={() => navigate(`/engagements/${id}`)}>Done</Btn>
           </div>
         </div>
