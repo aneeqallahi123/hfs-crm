@@ -159,7 +159,9 @@ router.post('/:id/sync-library', rbac('partner', 'manager'), async (req, res) =>
     const newHeads = new Set();
     for (const it of libItems) {
       const head = heads.find(h => h.id === it.head_id_fk);
-      if (have.has(`${head.head_id}\u0000${it.ref}\u0000${it.p}`)) continue;
+      const key = `${head.head_id}\u0000${it.ref}\u0000${it.p}`;
+      if (have.has(key)) continue;
+      have.add(key); // also dedupe within this batch
       if (!headIncluded.has(head.head_id)) newHeads.add(head.head_id);
       rows.push({ it, head, included: headIncluded.get(head.head_id) ?? defaultIncluded(head.section) });
     }

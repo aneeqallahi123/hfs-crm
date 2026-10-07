@@ -68,16 +68,26 @@ router.get('/', async (req, res) => {
       }
     }
 
+    // Library items are matched on (head, ref, p) via LATERAL ... LIMIT 1 so each
+    // engagement item yields exactly one row. Many library items (e.g. the
+    // ad-hoc / simplified lists) share an empty ref, and a plain join on ref
+    // multiplied every item by the number of siblings in its head.
     const { rows } = await pool.query(
       `SELECT i.*,
               li.context_doc_key  AS lib_context_doc_key,
               li.context_doc_name AS lib_context_doc_name
        FROM items i
        LEFT JOIN engagements e ON e.id = i.engagement_id
-       LEFT JOIN library_heads lh ON lh.head_id = i.head_id AND lh.module = e.module
-       LEFT JOIN library_items li ON li.head_id_fk = lh.id AND li.ref = i.ref
+       LEFT JOIN LATERAL (
+         SELECT li.context_doc_key, li.context_doc_name
+         FROM library_heads lh
+         JOIN library_items li ON li.head_id_fk = lh.id
+         WHERE lh.head_id = i.head_id AND lh.module = e.module AND li.ref = i.ref AND (i.ref <> '' OR li.p = i.p)
+         ORDER BY (li.p = i.p) DESC, (li.context_doc_key <> '') DESC
+         LIMIT 1
+       ) li ON true
        WHERE i.engagement_id = $1
-       ORDER BY i.head_id, i.ref`,
+       ORDER BY i.head_id, i.ref, i.created_at, i.id`,
       [engagementId]
     );
     const items = await Promise.all(rows.map(async row => {
